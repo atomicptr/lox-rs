@@ -175,6 +175,8 @@ pub fn lexer(source: &str) -> Result<Vec<(Token, usize)>, usize> {
                     if let Some(_) = data.get(current + 1) {
                         let mut tmp_curr = current + 1;
 
+                        let start = current;
+
                         let mut pre = vec![c.clone()];
                         let mut post = vec![];
 
@@ -209,8 +211,7 @@ pub fn lexer(source: &str) -> Result<Vec<(Token, usize)>, usize> {
 
                         match format!("{}.{}", pre, post).parse::<f64>() {
                             Ok(num) => {
-                                let start = current;
-                                current = tmp_curr;
+                                current = tmp_curr - 1;
                                 Some((Token::Number(num), start))
                             }
                             Err(err) => {
@@ -231,6 +232,8 @@ pub fn lexer(source: &str) -> Result<Vec<(Token, usize)>, usize> {
                 c if c.is_alphanumeric() => {
                     let mut ident = vec![c.clone()];
 
+                    let start = current;
+
                     let mut tmp_curr = current + 1;
 
                     while let Some(c) = data.get(tmp_curr) {
@@ -243,7 +246,7 @@ pub fn lexer(source: &str) -> Result<Vec<(Token, usize)>, usize> {
                         tmp_curr += 1;
                     }
 
-                    current = tmp_curr;
+                    current = tmp_curr - 1;
 
                     let ident: String = ident.iter().collect();
 
@@ -267,7 +270,7 @@ pub fn lexer(source: &str) -> Result<Vec<(Token, usize)>, usize> {
                             "while" => Token::While,
                             _ => Token::Identifier(ident),
                         },
-                        current,
+                        start,
                     ))
                 }
 
@@ -283,7 +286,14 @@ pub fn lexer(source: &str) -> Result<Vec<(Token, usize)>, usize> {
             tokens.push(Some((Token::Eof, current)));
         }
 
-        // println!("Tokens until {current}: {:?}", tokens);
+        println!(
+            "Tokens until {current}: {:?}",
+            tokens
+                .iter()
+                .filter(|t| t.is_some())
+                .map(|t| t.clone().unwrap())
+                .collect::<Vec<(Token, usize)>>()
+        );
 
         current += 1;
     }
@@ -397,6 +407,8 @@ mod tests {
         let (t, pos) = tokens.next().unwrap();
         assert_eq!(*t, Token::RParen);
         assert_eq!(*pos, 6);
+
+        assert_eq!(0, tokens.len(), "handled all tokens");
     }
 
     #[test]
@@ -415,6 +427,8 @@ mod tests {
         let (t, pos) = tokens.next().unwrap();
         assert_eq!(*t, Token::String("lox".to_string()));
         assert_eq!(*pos, 18);
+
+        assert_eq!(0, tokens.len(), "handled all tokens");
     }
 
     #[test]
@@ -441,6 +455,8 @@ mod tests {
         let (t, pos) = tokens.next().unwrap();
         assert_eq!(*t, Token::Number(1234.0));
         assert_eq!(*pos, 25);
+
+        assert_eq!(0, tokens.len(), "handled all tokens");
     }
 
     #[test]
@@ -449,8 +465,132 @@ mod tests {
         assert_eq!(1, tokens.len());
 
         let tokens =
-            lexer("777 /* lucky number but also the answer */ 42").expect("could be parsed");
+            lexer("777 /* lucky number but\n\n\talso the answer */ 42").expect("could be parsed");
 
         assert_eq!(2, tokens.len());
+    }
+
+    #[test]
+    fn lex_test_mini_program() {
+        let tokens = lexer(
+            "var x = 1337;\nvar y = 3;\nif ((x + y) == 1340) {\n\tprint \"HIT\";\n}\nprint 13.37;\n",
+        )
+        .expect("able to parse");
+
+        let mut tokens = tokens.iter();
+
+        let (t, pos) = tokens.next().unwrap();
+        assert_eq!(*t, Token::Var);
+        assert_eq!(*pos, 0);
+
+        let (t, pos) = tokens.next().unwrap();
+        assert_eq!(*t, Token::Identifier("x".to_string()));
+        assert_eq!(*pos, 4);
+
+        let (t, pos) = tokens.next().unwrap();
+        assert_eq!(*t, Token::Equal);
+        assert_eq!(*pos, 6);
+
+        let (t, pos) = tokens.next().unwrap();
+        assert_eq!(*t, Token::Number(1337.0));
+        assert_eq!(*pos, 8);
+
+        let (t, pos) = tokens.next().unwrap();
+        assert_eq!(*t, Token::Semicolon);
+        assert_eq!(*pos, 12);
+
+        let (t, pos) = tokens.next().unwrap();
+        assert_eq!(*t, Token::Var);
+        assert_eq!(*pos, 14);
+
+        let (t, pos) = tokens.next().unwrap();
+        assert_eq!(*t, Token::Identifier("y".to_string()));
+        assert_eq!(*pos, 18);
+
+        let (t, pos) = tokens.next().unwrap();
+        assert_eq!(*t, Token::Equal);
+        assert_eq!(*pos, 20);
+
+        let (t, pos) = tokens.next().unwrap();
+        assert_eq!(*t, Token::Number(3.0));
+        assert_eq!(*pos, 22);
+
+        let (t, pos) = tokens.next().unwrap();
+        assert_eq!(*t, Token::Semicolon);
+        assert_eq!(*pos, 23);
+
+        let (t, pos) = tokens.next().unwrap();
+        assert_eq!(*t, Token::If);
+        assert_eq!(*pos, 25);
+
+        let (t, pos) = tokens.next().unwrap();
+        assert_eq!(*t, Token::LParen);
+        assert_eq!(*pos, 28);
+
+        let (t, pos) = tokens.next().unwrap();
+        assert_eq!(*t, Token::LParen);
+        assert_eq!(*pos, 29);
+
+        let (t, pos) = tokens.next().unwrap();
+        assert_eq!(*t, Token::Identifier("x".to_string()));
+        assert_eq!(*pos, 30);
+
+        let (t, pos) = tokens.next().unwrap();
+        assert_eq!(*t, Token::Plus);
+        assert_eq!(*pos, 32);
+
+        let (t, pos) = tokens.next().unwrap();
+        assert_eq!(*t, Token::Identifier("y".to_string()));
+        assert_eq!(*pos, 34);
+
+        let (t, pos) = tokens.next().unwrap();
+        assert_eq!(*t, Token::RParen);
+        assert_eq!(*pos, 35);
+
+        let (t, pos) = tokens.next().unwrap();
+        assert_eq!(*t, Token::EqualEqual);
+        assert_eq!(*pos, 38);
+
+        let (t, pos) = tokens.next().unwrap();
+        assert_eq!(*t, Token::Number(1340.0));
+        assert_eq!(*pos, 40);
+
+        let (t, pos) = tokens.next().unwrap();
+        assert_eq!(*t, Token::RParen);
+        assert_eq!(*pos, 44);
+
+        let (t, pos) = tokens.next().unwrap();
+        assert_eq!(*t, Token::LBrace);
+        assert_eq!(*pos, 46);
+
+        let (t, pos) = tokens.next().unwrap();
+        assert_eq!(*t, Token::Print);
+        assert_eq!(*pos, 49);
+
+        let (t, pos) = tokens.next().unwrap();
+        assert_eq!(*t, Token::String("HIT".to_string()));
+        assert_eq!(*pos, 55);
+
+        let (t, pos) = tokens.next().unwrap();
+        assert_eq!(*t, Token::Semicolon);
+        assert_eq!(*pos, 60);
+
+        let (t, pos) = tokens.next().unwrap();
+        assert_eq!(*t, Token::RBrace);
+        assert_eq!(*pos, 62);
+
+        let (t, pos) = tokens.next().unwrap();
+        assert_eq!(*t, Token::Print);
+        assert_eq!(*pos, 64);
+
+        let (t, pos) = tokens.next().unwrap();
+        assert_eq!(*t, Token::Number(13.37));
+        assert_eq!(*pos, 70);
+
+        let (t, pos) = tokens.next().unwrap();
+        assert_eq!(*t, Token::Semicolon);
+        assert_eq!(*pos, 75);
+
+        assert_eq!(0, tokens.len(), "handled all tokens");
     }
 }
