@@ -4,7 +4,7 @@ use std::{
     process::exit,
 };
 
-use lexer::lexer;
+use lexer::{LexerError, lexer, print_lexer_error};
 
 mod errormsg;
 mod lexer;
@@ -31,23 +31,28 @@ fn run_prompt() {
 
         stdin().read_line(&mut s).expect("could not read string");
 
-        run(s.trim().to_string());
+        let s = s.trim().to_string();
+
+        let res = run(&s);
+        if res.is_err() {
+            print_lexer_error(&s, res.unwrap_err());
+        }
     }
 }
 
 fn run_file(file: &String) {
     let source = fs::read_to_string(file).expect("error reading file");
-    let _ = run(source);
+    let res = run(&source);
+
+    if res.is_err() {
+        print_lexer_error(&source, res.unwrap_err());
+    }
 }
 
-fn run(code: String) {
-    let tokens = lexer(&code);
-
-    if tokens.is_err() {
-        panic!("Err: {:?}", tokens);
-    }
-
-    let tokens = tokens.unwrap();
+fn run(code: &String) -> Result<(), LexerError> {
+    let tokens = lexer(&code)?;
 
     println!("Code:\n\n{code}\n\nTokens:\n\n{:?}", tokens);
+
+    Ok(())
 }

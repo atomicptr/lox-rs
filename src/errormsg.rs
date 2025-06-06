@@ -26,39 +26,50 @@ fn get_line(source: &str, line: usize) -> Option<String> {
     lines.get(line).map(|s| s.clone())
 }
 
+fn print_annotated_line(
+    line: &String,
+    linecol: Option<(usize, usize)>,
+    annotation: Option<String>,
+) {
+    let mut l = 0;
+    let mut c = 0;
+
+    match linecol {
+        Some((linenum, col)) => {
+            l = linenum;
+            c = col;
+
+            println!("\t \x1b[37;2m{:3} |\x1b[0m {line}", linenum)
+        }
+        None => println!("\t {line}"),
+    }
+
+    if let Some(annotation) = annotation {
+        let whitespace = " ".repeat(format!("\t {:3} | ", l).len() + c - 1);
+        println!("\t{whitespace}\x1b[31m^ --- {annotation}\x1b[0m"); // TODO: if too long split into multiple lines
+    }
+}
+
 pub fn print_error_at(source: &str, index: usize, error: &str) {
     if let Some((line, col)) = pos_from_index(&source, index) {
         if let Some(line_text) = get_line(&source, line) {
             println!("\n");
 
-            // TODO: automatically determine how much context we wanna show
-            if let Some(diff) = line.checked_sub(2) {
-                if let Some(prev) = get_line(&source, diff) {
-                    println!("\t{} |{prev}", line - 2);
+            for i in (1..6).rev() {
+                if let Some(diff) = line.checked_sub(i) {
+                    if let Some(prev) = get_line(&source, diff) {
+                        print_annotated_line(&prev, Some((1 + line - i, col)), None);
+                    }
                 }
             }
 
-            if let Some(diff) = line.checked_sub(1) {
-                if let Some(prev) = get_line(&source, diff) {
-                    println!("\t{} |{prev}", line - 1);
-                }
-            }
+            print_annotated_line(&line_text, Some((1 + line, col)), Some(error.to_string()));
 
-            println!("\t{} |{line_text}", line);
-            println!(
-                "\t{}^--- {error}",
-                " ".repeat(format!("{} |", line).len() + col)
-            );
-
-            if let Some(diff) = line.checked_add(1) {
-                if let Some(prev) = get_line(&source, diff) {
-                    println!("\t{} |{prev}", line + 1);
-                }
-            }
-
-            if let Some(diff) = line.checked_add(2) {
-                if let Some(prev) = get_line(&source, diff) {
-                    println!("\t{} |{prev}", line + 2);
+            for i in 1..6 {
+                if let Some(diff) = line.checked_add(i) {
+                    if let Some(prev) = get_line(&source, diff) {
+                        print_annotated_line(&prev, Some((1 + line + i, col)), None);
+                    }
                 }
             }
 

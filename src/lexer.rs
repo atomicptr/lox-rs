@@ -1,3 +1,5 @@
+use std::num::ParseFloatError;
+
 use crate::errormsg::print_error_at;
 
 #[derive(Debug, PartialEq, Clone)]
@@ -42,7 +44,15 @@ pub enum Token {
     Eof,
 }
 
-pub fn lexer(source: &str) -> Result<Vec<(Token, usize)>, usize> {
+#[derive(Debug)]
+pub enum LexerError {
+    UnexpectedCharacter(char, usize),
+    UnterminatedString(usize),
+    TrailingDot(usize),
+    CouldNotParseNumber(String, ParseFloatError, usize),
+}
+
+pub fn lexer(source: &str) -> Result<Vec<(Token, usize)>, LexerError> {
     let mut tokens = vec![];
 
     let mut current = 0;
@@ -157,76 +167,74 @@ pub fn lexer(source: &str) -> Result<Vec<(Token, usize)>, usize> {
                     if let Some(_) = data.get(current + 1) {
                         let mut tmp_curr = current + 1;
 
+                        let mut found = false;
+
                         while let Some(c) = data.get(tmp_curr) {
                             if *c == '"' {
                                 let slice = &data[(current + 1)..tmp_curr];
                                 tokens.push(Some((Token::String(slice.iter().collect()), current)));
                                 current = tmp_curr;
+                                found = true;
                                 break;
                             }
 
                             tmp_curr += 1;
                         }
+
+                        if !found {
+                            return Err(LexerError::UnterminatedString(current));
+                        }
+
                         None
                     } else {
-                        print_error_at(&source, current, "Unterminated string");
-                        panic!("Unterminated string!");
+                        return Err(LexerError::UnterminatedString(current));
                     }
                 }
-                '0'..'9' => {
-                    if let Some(_) = data.get(current + 1) {
-                        let mut tmp_curr = current + 1;
+                '0'..='9' => {
+                    let mut tmp_curr = current + 1;
 
-                        let start = current;
+                    let start = current;
 
-                        let mut pre = vec![c.clone()];
-                        let mut post = vec![];
+                    let mut pre = vec![c.clone()];
+                    let mut post = vec![];
 
-                        let mut has_dot = false;
+                    let mut has_dot = false;
 
-                        while let Some(c) = data.get(tmp_curr) {
-                            match (c, has_dot) {
-                                ('0'..'9', false) => pre.push(c.clone()),
-                                ('0'..'9', true) => post.push(c.clone()),
-                                ('.', false) => has_dot = true,
-                                ('.', true) => {
-                                    print_error_at(&source, tmp_curr, "Unexpected '.'");
-                                    panic!("Unexpected '.'");
-                                }
-                                _ => {
-                                    // number is over
-                                    break;
-                                }
+                    while let Some(c) = data.get(tmp_curr) {
+                        match (c, has_dot) {
+                            ('0'..='9', false) => pre.push(c.clone()),
+                            ('0'..='9', true) => post.push(c.clone()),
+                            ('.', false) => has_dot = true,
+                            ('.', true) => {
+                                return Err(LexerError::UnexpectedCharacter('.', current));
                             }
-
-                            tmp_curr += 1;
-                        }
-
-                        // has trailing dot
-                        if has_dot && post.is_empty() {
-                            print_error_at(&source, current, "trailing dot is not allowed");
-                            panic!("trailing dot is not allowed");
-                        }
-
-                        let pre: String = pre.iter().collect();
-                        let post: String = post.iter().collect();
-
-                        match format!("{}.{}", pre, post).parse::<f64>() {
-                            Ok(num) => {
-                                current = tmp_curr - 1;
-                                Some((Token::Number(num), start))
-                            }
-                            Err(err) => {
-                                print_error_at(
-                                    &source,
-                                    current,
-                                    format!("could not parse number {:?}", err).as_str(),
-                                );
-                                panic!("could not parse number");
+                            _ => {
+                                // number is over
+                                break;
                             }
                         }
-                    } else {
-                        None
+
+                        tmp_curr += 1;
+                    }
+
+                    // has trailing dot
+                    if has_dot && post.is_empty() {
+                        return Err(LexerError::TrailingDot(current));
+                    }
+
+                    let pre: String = pre.iter().collect();
+                    let post: String = post.iter().collect();
+
+                    let num_str = format!("{}.{}", pre, post);
+
+                    match num_str.parse::<f64>() {
+                        Ok(num) => {
+                            current = tmp_curr - 1;
+                            Some((Token::Number(num), start))
+                        }
+                        Err(err) => {
+                            return Err(LexerError::CouldNotParseNumber(num_str, err, current));
+                        }
                     }
                 }
 
@@ -278,8 +286,7 @@ pub fn lexer(source: &str) -> Result<Vec<(Token, usize)>, usize> {
 
                 // nothing matches, error
                 c => {
-                    print_error_at(source, current, format!("Unknown character: {c}").as_str());
-                    panic!("Unknown character {c}");
+                    return Err(LexerError::UnexpectedCharacter(c.clone(), current));
                 }
             };
 
@@ -288,19 +295,33 @@ pub fn lexer(source: &str) -> Result<Vec<(Token, usize)>, usize> {
             tokens.push(Some((Token::Eof, current)));
         }
 
-        println!(
-            "Tokens until {current}: {:?}",
-            tokens
-                .iter()
-                .filter(|t| t.is_some())
-                .map(|t| t.clone().unwrap())
-                .collect::<Vec<(Token, usize)>>()
-        );
+        // println!(
+        //     "Tokens until {current}: {:?}",
+        //     tokens
+        //         .iter()
+        //         .filter(|t| t.is_some())
+        //         .map(|t| t.clone().unwrap())
+        //         .collect::<Vec<(Token, usize)>>()
+        // );
 
         current += 1;
     }
 
     Ok(tokens.into_iter().flatten().collect())
+}
+
+pub fn print_lexer_error(source: &String, err: LexerError) {
+    let (message, index) = match err {
+        LexerError::UnexpectedCharacter(c, index) => (format!("unexpected character {c}"), index),
+        LexerError::UnterminatedString(index) => ("unterminated string".to_string(), index),
+        LexerError::TrailingDot(index) => ("trailing dot".to_string(), index),
+        LexerError::CouldNotParseNumber(str, err, index) => (
+            format!("could not parse '{str}' into number: {:?}", err),
+            index,
+        ),
+    };
+
+    print_error_at(source, index, message.as_str());
 }
 
 #[cfg(test)]
@@ -385,6 +406,10 @@ mod tests {
         assert_eq!(*pos, 25);
 
         assert_eq!(0, tokens.len(), "handled all tokens");
+
+        let tokens = lexer("123456789").expect("couldnt parse");
+        let (t, _) = tokens.iter().next().unwrap();
+        assert_eq!(*t, Token::Number(123456789.0));
     }
 
     #[test]
@@ -520,5 +545,10 @@ mod tests {
         assert_eq!(*pos, 75);
 
         assert_eq!(0, tokens.len(), "handled all tokens");
+    }
+
+    #[test]
+    fn test_should_parse_error() {
+        let _ = lexer("var x = \";").expect_err("should throw unterminated string");
     }
 }
