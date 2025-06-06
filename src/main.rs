@@ -6,6 +6,7 @@ use std::{
 
 use lexer::lexer;
 
+mod errormsg;
 mod lexer;
 
 fn main() {
