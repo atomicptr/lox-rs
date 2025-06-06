@@ -44,7 +44,6 @@ pub fn lexer(source: &str) -> Result<Vec<(Token, usize)>, usize> {
     let mut tokens = vec![];
 
     let mut current = 0;
-    // let mut line = 0;
 
     let data: Vec<char> = source.chars().collect();
 
@@ -116,20 +115,37 @@ pub fn lexer(source: &str) -> Result<Vec<(Token, usize)>, usize> {
                 }
                 '/' => {
                     if let Some(c) = data.get(current + 1) {
-                        current += 1;
+                        match *c {
+                            '/' => {
+                                // a comment, so lets go to the end of the line
+                                while let Some(c) = data.get(current + 1) {
+                                    current += 1;
 
-                        if *c == '/' {
-                            // a comment, so lets go to the end of the line
-                            while let Some(c) = data.get(current + 1) {
-                                current += 1;
-
-                                if *c == '\n' {
-                                    break;
+                                    if *c == '\n' {
+                                        break;
+                                    }
                                 }
+                                None
                             }
-                            None
-                        } else {
-                            Some((Token::Slash, current))
+
+                            // a multiline comment
+                            '*' => {
+                                while let Some(c) = data.get(current + 1) {
+                                    if *c == '*' {
+                                        if let Some('/') = data.get(current + 2) {
+                                            // end of multiline comment found
+                                            current += 2;
+                                            break;
+                                        }
+                                    }
+
+                                    current += 1;
+                                }
+                                None
+                            }
+
+                            // just a free standing slash
+                            _ => Some((Token::Slash, current)),
                         }
                     } else {
                         None
@@ -425,5 +441,16 @@ mod tests {
         let (t, pos) = tokens.next().unwrap();
         assert_eq!(*t, Token::Number(1234.0));
         assert_eq!(*pos, 25);
+    }
+
+    #[test]
+    fn lex_test_comments() {
+        let tokens = lexer("777 // lucky number").expect("could be parsed");
+        assert_eq!(1, tokens.len());
+
+        let tokens =
+            lexer("777 /* lucky number but also the answer */ 42").expect("could be parsed");
+
+        assert_eq!(2, tokens.len());
     }
 }
