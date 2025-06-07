@@ -1,3 +1,5 @@
+use crate::{lexer::LexerError, parser::ParserError};
+
 fn pos_from_index(source: &str, index: usize) -> Option<(usize, usize)> {
     let mut line = 0;
     let mut col = 0;
@@ -48,6 +50,34 @@ fn print_annotated_line(
         let whitespace = " ".repeat(format!("\t {:3} | ", l).len() + c - 1);
         println!("\t{whitespace}\x1b[31m^ --- {annotation}\x1b[0m"); // TODO: if too long split into multiple lines
     }
+}
+
+pub fn print_lexer_error(source: &String, err: LexerError) {
+    let (message, index) = match err {
+        LexerError::UnexpectedCharacter(c, index) => (format!("unexpected character {c}"), index),
+        LexerError::UnterminatedString(index) => ("unterminated string".to_string(), index),
+        LexerError::TrailingDot(index) => ("trailing dot".to_string(), index),
+        LexerError::CouldNotParseNumber(str, err, index) => (
+            format!("could not parse '{str}' into number: {:?}", err),
+            index,
+        ),
+    };
+
+    print_error_at(source, index, message.as_str());
+}
+
+pub fn print_parser_error(source: &String, err: ParserError) {
+    let (message, index) = match err {
+        ParserError::UnexpectedToken(token, index) => {
+            (format!("unexpected token '{:?}'", token), index)
+        }
+        ParserError::CouldntFindRParen(index) => {
+            ("could not find ')' after expression.".to_string(), index)
+        }
+        ParserError::UnexpectedEOF => ("unexpected end of file".to_string(), source.len() - 1),
+    };
+
+    print_error_at(source, index, message.as_str());
 }
 
 pub fn print_error_at(source: &str, index: usize, error: &str) {

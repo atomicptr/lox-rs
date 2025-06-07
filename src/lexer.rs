@@ -1,7 +1,5 @@
 use std::num::ParseFloatError;
 
-use crate::errormsg::print_error_at;
-
 #[derive(Debug, PartialEq, Clone)]
 pub enum Token {
     LParen,
@@ -44,6 +42,52 @@ pub enum Token {
     Eof,
 }
 
+impl Token {
+    pub fn is_same_type(&self, other: &Token) -> bool {
+        match (self, other) {
+            (Token::LParen, Token::LParen) => true,
+            (Token::RParen, Token::RParen) => true,
+            (Token::LBrace, Token::LBrace) => true,
+            (Token::RBrace, Token::RBrace) => true,
+            (Token::Comma, Token::Comma) => true,
+            (Token::Dot, Token::Dot) => true,
+            (Token::Minus, Token::Minus) => true,
+            (Token::Plus, Token::Plus) => true,
+            (Token::Semicolon, Token::Semicolon) => true,
+            (Token::Slash, Token::Slash) => true,
+            (Token::Star, Token::Star) => true,
+            (Token::Bang, Token::Bang) => true,
+            (Token::NotEqual, Token::NotEqual) => true,
+            (Token::Equal, Token::Equal) => true,
+            (Token::EqualEqual, Token::EqualEqual) => true,
+            (Token::Greater, Token::Greater) => true,
+            (Token::GreaterEqual, Token::GreaterEqual) => true,
+            (Token::Less, Token::Less) => true,
+            (Token::LessEqual, Token::LessEqual) => true,
+            (Token::Identifier(_), Token::Identifier(_)) => true,
+            (Token::String(_), Token::String(_)) => true,
+            (Token::Number(_), Token::Number(_)) => true,
+            (Token::Bool(_), Token::Bool(_)) => true,
+            (Token::And, Token::And) => true,
+            (Token::Class, Token::Class) => true,
+            (Token::Else, Token::Else) => true,
+            (Token::If, Token::If) => true,
+            (Token::Fun, Token::Fun) => true,
+            (Token::For, Token::For) => true,
+            (Token::Nil, Token::Nil) => true,
+            (Token::Or, Token::Or) => true,
+            (Token::Print, Token::Print) => true,
+            (Token::Return, Token::Return) => true,
+            (Token::Super, Token::Super) => true,
+            (Token::This, Token::This) => true,
+            (Token::Var, Token::Var) => true,
+            (Token::While, Token::While) => true,
+            (Token::Eof, Token::Eof) => true,
+            _ => false,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum LexerError {
     UnexpectedCharacter(char, usize),
@@ -59,241 +103,237 @@ pub fn lexer(source: &str) -> Result<Vec<(Token, usize)>, LexerError> {
 
     let data: Vec<char> = source.chars().collect();
 
-    while current < data.len() {
-        if let Some(c) = data.get(current) {
-            let token = match c {
-                ' ' | '\n' | '\r' | '\t' => None,
-                '(' => Some((Token::LParen, current)),
-                ')' => Some((Token::RParen, current)),
-                '{' => Some((Token::LBrace, current)),
-                '}' => Some((Token::RBrace, current)),
-                ',' => Some((Token::Comma, current)),
-                '.' => Some((Token::Dot, current)),
-                '-' => Some((Token::Minus, current)),
-                '+' => Some((Token::Plus, current)),
-                ';' => Some((Token::Semicolon, current)),
-                '*' => Some((Token::Star, current)),
-                '!' => {
-                    if let Some(c) = data.get(current + 1) {
-                        match c {
-                            '=' => {
-                                current += 1;
-                                Some((Token::NotEqual, current))
-                            }
-                            _ => Some((Token::Bang, current)),
+    while let Some(c) = data.get(current) {
+        let token = match c {
+            ' ' | '\n' | '\r' | '\t' => None,
+            '(' => Some((Token::LParen, current)),
+            ')' => Some((Token::RParen, current)),
+            '{' => Some((Token::LBrace, current)),
+            '}' => Some((Token::RBrace, current)),
+            ',' => Some((Token::Comma, current)),
+            '.' => Some((Token::Dot, current)),
+            '-' => Some((Token::Minus, current)),
+            '+' => Some((Token::Plus, current)),
+            ';' => Some((Token::Semicolon, current)),
+            '*' => Some((Token::Star, current)),
+            '!' => {
+                if let Some(c) = data.get(current + 1) {
+                    match c {
+                        '=' => {
+                            current += 1;
+                            Some((Token::NotEqual, current))
                         }
-                    } else {
-                        None
+                        _ => Some((Token::Bang, current)),
                     }
+                } else {
+                    None
                 }
-                '=' => {
-                    if let Some(c) = data.get(current + 1) {
-                        match c {
-                            '=' => {
-                                current += 1;
-                                Some((Token::EqualEqual, current))
-                            }
-                            _ => Some((Token::Equal, current)),
+            }
+            '=' => {
+                if let Some(c) = data.get(current + 1) {
+                    match c {
+                        '=' => {
+                            current += 1;
+                            Some((Token::EqualEqual, current))
                         }
-                    } else {
-                        None
+                        _ => Some((Token::Equal, current)),
                     }
+                } else {
+                    None
                 }
-                '>' => {
-                    if let Some(c) = data.get(current + 1) {
-                        match c {
-                            '=' => {
-                                current += 1;
-                                Some((Token::GreaterEqual, current))
-                            }
-                            _ => Some((Token::Greater, current)),
+            }
+            '>' => {
+                if let Some(c) = data.get(current + 1) {
+                    match c {
+                        '=' => {
+                            current += 1;
+                            Some((Token::GreaterEqual, current))
                         }
-                    } else {
-                        None
+                        _ => Some((Token::Greater, current)),
                     }
+                } else {
+                    None
                 }
-                '<' => {
-                    if let Some(c) = data.get(current + 1) {
-                        match c {
-                            '=' => {
-                                current += 1;
-                                Some((Token::LessEqual, current))
-                            }
-                            _ => Some((Token::Less, current)),
+            }
+            '<' => {
+                if let Some(c) = data.get(current + 1) {
+                    match c {
+                        '=' => {
+                            current += 1;
+                            Some((Token::LessEqual, current))
                         }
-                    } else {
-                        None
+                        _ => Some((Token::Less, current)),
                     }
+                } else {
+                    None
                 }
-                '/' => {
-                    if let Some(c) = data.get(current + 1) {
-                        match *c {
-                            '/' => {
-                                // a comment, so lets go to the end of the line
-                                while let Some(c) = data.get(current + 1) {
-                                    current += 1;
+            }
+            '/' => {
+                if let Some(c) = data.get(current + 1) {
+                    match *c {
+                        '/' => {
+                            // a comment, so lets go to the end of the line
+                            while let Some(c) = data.get(current + 1) {
+                                current += 1;
 
-                                    if *c == '\n' {
+                                if *c == '\n' {
+                                    break;
+                                }
+                            }
+                            None
+                        }
+
+                        // a multiline comment
+                        '*' => {
+                            while let Some(c) = data.get(current + 1) {
+                                if *c == '*' {
+                                    if let Some('/') = data.get(current + 2) {
+                                        // end of multiline comment found
+                                        current += 2;
                                         break;
                                     }
                                 }
-                                None
+
+                                current += 1;
                             }
-
-                            // a multiline comment
-                            '*' => {
-                                while let Some(c) = data.get(current + 1) {
-                                    if *c == '*' {
-                                        if let Some('/') = data.get(current + 2) {
-                                            // end of multiline comment found
-                                            current += 2;
-                                            break;
-                                        }
-                                    }
-
-                                    current += 1;
-                                }
-                                None
-                            }
-
-                            // just a free standing slash
-                            _ => Some((Token::Slash, current)),
+                            None
                         }
-                    } else {
-                        None
+
+                        // just a free standing slash
+                        _ => Some((Token::Slash, current)),
                     }
+                } else {
+                    None
                 }
-                '"' => {
-                    if let Some(_) = data.get(current + 1) {
-                        let mut tmp_curr = current + 1;
-
-                        let mut found = false;
-
-                        while let Some(c) = data.get(tmp_curr) {
-                            if *c == '"' {
-                                let slice = &data[(current + 1)..tmp_curr];
-                                tokens.push(Some((Token::String(slice.iter().collect()), current)));
-                                current = tmp_curr;
-                                found = true;
-                                break;
-                            }
-
-                            tmp_curr += 1;
-                        }
-
-                        if !found {
-                            return Err(LexerError::UnterminatedString(current));
-                        }
-
-                        None
-                    } else {
-                        return Err(LexerError::UnterminatedString(current));
-                    }
-                }
-                '0'..='9' => {
+            }
+            '"' => {
+                if let Some(_) = data.get(current + 1) {
                     let mut tmp_curr = current + 1;
 
-                    let start = current;
-
-                    let mut pre = vec![c.clone()];
-                    let mut post = vec![];
-
-                    let mut has_dot = false;
+                    let mut found = false;
 
                     while let Some(c) = data.get(tmp_curr) {
-                        match (c, has_dot) {
-                            ('0'..='9', false) => pre.push(c.clone()),
-                            ('0'..='9', true) => post.push(c.clone()),
-                            ('.', false) => has_dot = true,
-                            ('.', true) => {
-                                return Err(LexerError::UnexpectedCharacter('.', current));
-                            }
-                            _ => {
-                                // number is over
-                                break;
-                            }
-                        }
-
-                        tmp_curr += 1;
-                    }
-
-                    // has trailing dot
-                    if has_dot && post.is_empty() {
-                        return Err(LexerError::TrailingDot(current));
-                    }
-
-                    let pre: String = pre.iter().collect();
-                    let post: String = post.iter().collect();
-
-                    let num_str = format!("{}.{}", pre, post);
-
-                    match num_str.parse::<f64>() {
-                        Ok(num) => {
-                            current = tmp_curr - 1;
-                            Some((Token::Number(num), start))
-                        }
-                        Err(err) => {
-                            return Err(LexerError::CouldNotParseNumber(num_str, err, current));
-                        }
-                    }
-                }
-
-                // identifier matching
-                c if c.is_alphanumeric() => {
-                    let mut ident = vec![c.clone()];
-
-                    let start = current;
-
-                    let mut tmp_curr = current + 1;
-
-                    while let Some(c) = data.get(tmp_curr) {
-                        if !c.is_alphanumeric() && *c != '_' {
+                        if *c == '"' {
+                            let slice = &data[(current + 1)..tmp_curr];
+                            tokens.push(Some((Token::String(slice.iter().collect()), current)));
+                            current = tmp_curr;
+                            found = true;
                             break;
                         }
 
-                        ident.push(c.clone());
-
                         tmp_curr += 1;
                     }
 
-                    current = tmp_curr - 1;
+                    if !found {
+                        return Err(LexerError::UnterminatedString(current));
+                    }
 
-                    let ident: String = ident.iter().collect();
+                    None
+                } else {
+                    return Err(LexerError::UnterminatedString(current));
+                }
+            }
+            '0'..='9' => {
+                let mut tmp_curr = current + 1;
 
-                    Some((
-                        match ident.as_str() {
-                            "and" => Token::And,
-                            "class" => Token::Class,
-                            "else" => Token::Else,
-                            "false" => Token::Bool(false),
-                            "for" => Token::For,
-                            "fun" => Token::Fun,
-                            "if" => Token::If,
-                            "nil" => Token::Nil,
-                            "or" => Token::Or,
-                            "print" => Token::Print,
-                            "return" => Token::Return,
-                            "super" => Token::Super,
-                            "this" => Token::This,
-                            "true" => Token::Bool(true),
-                            "var" => Token::Var,
-                            "while" => Token::While,
-                            _ => Token::Identifier(ident),
-                        },
-                        start,
-                    ))
+                let start = current;
+
+                let mut pre = vec![c.clone()];
+                let mut post = vec![];
+
+                let mut has_dot = false;
+
+                while let Some(c) = data.get(tmp_curr) {
+                    match (c, has_dot) {
+                        ('0'..='9', false) => pre.push(c.clone()),
+                        ('0'..='9', true) => post.push(c.clone()),
+                        ('.', false) => has_dot = true,
+                        ('.', true) => {
+                            return Err(LexerError::UnexpectedCharacter('.', current));
+                        }
+                        _ => {
+                            // number is over
+                            break;
+                        }
+                    }
+
+                    tmp_curr += 1;
                 }
 
-                // nothing matches, error
-                c => {
-                    return Err(LexerError::UnexpectedCharacter(c.clone(), current));
+                // has trailing dot
+                if has_dot && post.is_empty() {
+                    return Err(LexerError::TrailingDot(current));
                 }
-            };
 
-            tokens.push(token);
-        } else {
-            tokens.push(Some((Token::Eof, current)));
-        }
+                let pre: String = pre.iter().collect();
+                let post: String = post.iter().collect();
+
+                let num_str = format!("{}.{}", pre, post);
+
+                match num_str.parse::<f64>() {
+                    Ok(num) => {
+                        current = tmp_curr - 1;
+                        Some((Token::Number(num), start))
+                    }
+                    Err(err) => {
+                        return Err(LexerError::CouldNotParseNumber(num_str, err, current));
+                    }
+                }
+            }
+
+            // identifier matching
+            c if c.is_alphanumeric() => {
+                let mut ident = vec![c.clone()];
+
+                let start = current;
+
+                let mut tmp_curr = current + 1;
+
+                while let Some(c) = data.get(tmp_curr) {
+                    if !c.is_alphanumeric() && *c != '_' {
+                        break;
+                    }
+
+                    ident.push(c.clone());
+
+                    tmp_curr += 1;
+                }
+
+                current = tmp_curr - 1;
+
+                let ident: String = ident.iter().collect();
+
+                Some((
+                    match ident.as_str() {
+                        "and" => Token::And,
+                        "class" => Token::Class,
+                        "else" => Token::Else,
+                        "false" => Token::Bool(false),
+                        "for" => Token::For,
+                        "fun" => Token::Fun,
+                        "if" => Token::If,
+                        "nil" => Token::Nil,
+                        "or" => Token::Or,
+                        "print" => Token::Print,
+                        "return" => Token::Return,
+                        "super" => Token::Super,
+                        "this" => Token::This,
+                        "true" => Token::Bool(true),
+                        "var" => Token::Var,
+                        "while" => Token::While,
+                        _ => Token::Identifier(ident),
+                    },
+                    start,
+                ))
+            }
+
+            // nothing matches, error
+            c => {
+                return Err(LexerError::UnexpectedCharacter(c.clone(), current));
+            }
+        };
+
+        tokens.push(token);
 
         // println!(
         //     "Tokens until {current}: {:?}",
@@ -307,21 +347,9 @@ pub fn lexer(source: &str) -> Result<Vec<(Token, usize)>, LexerError> {
         current += 1;
     }
 
+    tokens.push(Some((Token::Eof, data.len())));
+
     Ok(tokens.into_iter().flatten().collect())
-}
-
-pub fn print_lexer_error(source: &String, err: LexerError) {
-    let (message, index) = match err {
-        LexerError::UnexpectedCharacter(c, index) => (format!("unexpected character {c}"), index),
-        LexerError::UnterminatedString(index) => ("unterminated string".to_string(), index),
-        LexerError::TrailingDot(index) => ("trailing dot".to_string(), index),
-        LexerError::CouldNotParseNumber(str, err, index) => (
-            format!("could not parse '{str}' into number: {:?}", err),
-            index,
-        ),
-    };
-
-    print_error_at(source, index, message.as_str());
 }
 
 #[cfg(test)]
@@ -357,6 +385,10 @@ mod tests {
         assert_eq!(*t, Token::RParen);
         assert_eq!(*pos, 6);
 
+        let (t, pos) = tokens.next().unwrap();
+        assert_eq!(*t, Token::Eof);
+        assert_eq!(*pos, 7);
+
         assert_eq!(0, tokens.len(), "handled all tokens");
     }
 
@@ -376,6 +408,10 @@ mod tests {
         let (t, pos) = tokens.next().unwrap();
         assert_eq!(*t, Token::String("lox".to_string()));
         assert_eq!(*pos, 18);
+
+        let (t, pos) = tokens.next().unwrap();
+        assert_eq!(*t, Token::Eof);
+        assert_eq!(*pos, 23);
 
         assert_eq!(0, tokens.len(), "handled all tokens");
     }
@@ -405,6 +441,10 @@ mod tests {
         assert_eq!(*t, Token::Number(1234.0));
         assert_eq!(*pos, 25);
 
+        let (t, pos) = tokens.next().unwrap();
+        assert_eq!(*t, Token::Eof);
+        assert_eq!(*pos, 29);
+
         assert_eq!(0, tokens.len(), "handled all tokens");
 
         let tokens = lexer("123456789").expect("couldnt parse");
@@ -415,12 +455,12 @@ mod tests {
     #[test]
     fn lex_test_comments() {
         let tokens = lexer("777 // lucky number").expect("could be parsed");
-        assert_eq!(1, tokens.len());
+        assert_eq!(2, tokens.len());
 
         let tokens =
             lexer("777 /* lucky number but\n\n\talso the answer */ 42").expect("could be parsed");
 
-        assert_eq!(2, tokens.len());
+        assert_eq!(3, tokens.len());
     }
 
     #[test]
@@ -543,6 +583,10 @@ mod tests {
         let (t, pos) = tokens.next().unwrap();
         assert_eq!(*t, Token::Semicolon);
         assert_eq!(*pos, 75);
+
+        let (t, pos) = tokens.next().unwrap();
+        assert_eq!(*t, Token::Eof);
+        assert_eq!(*pos, 77);
 
         assert_eq!(0, tokens.len(), "handled all tokens");
     }

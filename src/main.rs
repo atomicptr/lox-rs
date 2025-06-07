@@ -4,10 +4,13 @@ use std::{
     process::exit,
 };
 
-use lexer::{LexerError, lexer, print_lexer_error};
+use errormsg::{print_lexer_error, print_parser_error};
+use lexer::{LexerError, lexer};
+use parser::ParserError;
 
 mod errormsg;
 mod lexer;
+mod parser;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -33,26 +36,49 @@ fn run_prompt() {
 
         let s = s.trim().to_string();
 
-        let res = run(&s);
-        if res.is_err() {
-            print_lexer_error(&s, res.unwrap_err());
+        match run(&s) {
+            Ok(()) => {}
+            Err(LoxError::LexerError(err)) => print_lexer_error(&s, err),
+            Err(LoxError::ParserError(err)) => print_parser_error(&s, err),
         }
     }
 }
 
 fn run_file(file: &String) {
     let source = fs::read_to_string(file).expect("error reading file");
-    let res = run(&source);
 
-    if res.is_err() {
-        print_lexer_error(&source, res.unwrap_err());
+    match run(&source) {
+        Ok(()) => {}
+        Err(LoxError::LexerError(err)) => print_lexer_error(&source, err),
+        Err(LoxError::ParserError(err)) => print_parser_error(&source, err),
     }
 }
 
-fn run(code: &String) -> Result<(), LexerError> {
+enum LoxError {
+    LexerError(LexerError),
+    ParserError(ParserError),
+}
+
+impl From<LexerError> for LoxError {
+    fn from(value: LexerError) -> Self {
+        LoxError::LexerError(value)
+    }
+}
+
+impl From<ParserError> for LoxError {
+    fn from(value: ParserError) -> Self {
+        LoxError::ParserError(value)
+    }
+}
+
+fn run(code: &String) -> Result<(), LoxError> {
     let tokens = lexer(&code)?;
 
     println!("Code:\n\n{code}\n\nTokens:\n\n{:?}", tokens);
+
+    let ast = parser::parse(tokens)?;
+
+    println!("\n\nAST:\n\n{:?}", ast);
 
     Ok(())
 }
