@@ -40,11 +40,25 @@ fn evaluate(expr: &Expr) -> Result<Value, RuntimeError> {
                 },
 
                 // string operations
-                (Value::String(a), BinaryOp::Eq, Value::String(b)) => Ok(Value::Bool(a == b)),
-                (Value::String(a), BinaryOp::NotEq, Value::String(b)) => Ok(Value::Bool(a != b)),
-                // string concat
-                (Value::String(a), BinaryOp::Plus, Value::String(b)) => {
-                    Ok(Value::String(format!("{a}{b}")))
+                (Value::String(a), op, Value::String(b)) => match op {
+                    BinaryOp::Eq => Ok(Value::Bool(a == b)),
+                    BinaryOp::NotEq => Ok(Value::Bool(a != b)),
+                    BinaryOp::Lesser => Ok(Value::Bool(a < b)),
+                    BinaryOp::LesserEq => Ok(Value::Bool(a <= b)),
+                    BinaryOp::Greater => Ok(Value::Bool(a > b)),
+                    BinaryOp::GreaterEq => Ok(Value::Bool(a >= b)),
+                    BinaryOp::Plus => Ok(Value::String(format!("{a}{b}"))),
+                    _ => Err(RuntimeError::BinaryOpTyperError(
+                        lhs,
+                        op.clone(),
+                        rhs,
+                        index,
+                    )),
+                },
+
+                // string mul
+                (Value::String(a), BinaryOp::Mul, Value::Number(b)) => {
+                    Ok(Value::String(a.repeat(b.round().abs() as usize)))
                 }
 
                 // bool operations
