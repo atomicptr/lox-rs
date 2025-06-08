@@ -56,6 +56,11 @@ fn evaluate(expr: &Expr) -> Result<Value, RuntimeError> {
                     )),
                 },
 
+                // string concat with num
+                (Value::String(a), BinaryOp::Plus, Value::Number(b)) => {
+                    Ok(Value::String(format!("{a}{b}")))
+                }
+
                 // string mul
                 (Value::String(a), BinaryOp::Mul, Value::Number(b)) => {
                     Ok(Value::String(a.repeat(b.round().abs() as usize)))
