@@ -4,11 +4,13 @@ use std::{
     process::exit,
 };
 
-use errormsg::{print_lexer_error, print_parser_error};
+use errormsg::{print_interpreter_error, print_lexer_error, print_parser_error};
+use interpreter::{InterpreterError, interpret};
 use lexer::{LexerError, lexer};
 use parser::{ParserError, print_expr};
 
 mod errormsg;
+mod interpreter;
 mod lexer;
 mod parser;
 
@@ -40,6 +42,7 @@ fn run_prompt() {
             Ok(()) => {}
             Err(LoxError::LexerError(err)) => print_lexer_error(&s, err),
             Err(LoxError::ParserError(err)) => print_parser_error(&s, err),
+            Err(LoxError::InterpreterError(err)) => print_interpreter_error(&s, err),
         }
     }
 }
@@ -51,12 +54,14 @@ fn run_file(file: &String) {
         Ok(()) => {}
         Err(LoxError::LexerError(err)) => print_lexer_error(&source, err),
         Err(LoxError::ParserError(err)) => print_parser_error(&source, err),
+        Err(LoxError::InterpreterError(err)) => print_interpreter_error(&source, err),
     }
 }
 
 enum LoxError {
     LexerError(LexerError),
     ParserError(ParserError),
+    InterpreterError(InterpreterError),
 }
 
 impl From<LexerError> for LoxError {
@@ -71,6 +76,12 @@ impl From<ParserError> for LoxError {
     }
 }
 
+impl From<InterpreterError> for LoxError {
+    fn from(value: InterpreterError) -> Self {
+        LoxError::InterpreterError(value)
+    }
+}
+
 fn run(code: &String) -> Result<(), LoxError> {
     let tokens = lexer(&code)?;
 
@@ -78,9 +89,13 @@ fn run(code: &String) -> Result<(), LoxError> {
 
     let ast = parser::parse(tokens)?;
 
-    println!("\n\nAST:\n\n");
+    println!("\n\nAST:\n");
 
     print_expr(&ast, 0);
+
+    let value = interpret(&ast)?;
+
+    println!("Result = {:?}", value);
 
     Ok(())
 }

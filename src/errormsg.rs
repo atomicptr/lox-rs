@@ -1,6 +1,6 @@
 use std::fmt::format;
 
-use crate::{lexer::LexerError, parser::ParserError};
+use crate::{interpreter::InterpreterError, lexer::LexerError, parser::ParserError};
 
 fn pos_from_index(source: &str, index: usize) -> Option<(usize, usize)> {
     let mut line = 0;
@@ -81,6 +81,8 @@ pub fn print_parser_error(source: &String, err: ParserError) {
 
     print_error_at(source, index, message.as_str());
 }
+
+pub fn print_interpreter_error(source: &String, err: InterpreterError) {}
 
 pub fn print_error_at(source: &str, index: usize, error: &str) {
     // if index goes beyond source code, append one character and set index to the last char
