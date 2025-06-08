@@ -1,4 +1,4 @@
-use crate::{interpreter::InterpreterError, lexer::LexerError, parser::ParserError};
+use crate::{interpreter::RuntimeError, lexer::LexerError, parser::ParserError};
 
 fn pos_from_index(source: &str, index: usize) -> Option<(usize, usize)> {
     let mut line = 0;
@@ -80,27 +80,27 @@ pub fn print_parser_error(source: &String, err: ParserError) {
     print_error_at(source, index, message.as_str());
 }
 
-pub fn print_interpreter_error(source: &String, err: InterpreterError) {
+pub fn print_interpreter_error(source: &String, err: RuntimeError) {
     let (message, index) = match err {
-        InterpreterError::TypeError(val, index) => {
+        RuntimeError::TypeError(val, index) => {
             (format!("value '{:?}' can't be used here", val), index)
         }
-        InterpreterError::BinaryOpUnaryTypeError(value, op, index) => (
+        RuntimeError::BinaryOpUnaryTypeError(value, op, index) => (
             format!("operator '{op}' can't be used with '{:?}'", value),
             index,
         ),
-        InterpreterError::BinaryOpTyperError(lhs, op, rhs, index) => (
+        RuntimeError::BinaryOpTyperError(lhs, op, rhs, index) => (
             format!(
                 "operator '{op}' for '{:?}' and '{:?}' is not allowed",
                 lhs, rhs
             ),
             index,
         ),
-        InterpreterError::UnaryOpTypeError(value, op, index) => (
+        RuntimeError::UnaryOpTypeError(value, op, index) => (
             format!("unary operator '{op}' can not be used with {:?}", value),
             index,
         ),
-        InterpreterError::DivByZero(index) => ("division by zero".to_string(), index),
+        RuntimeError::DivByZero(index) => ("division by zero".to_string(), index),
     };
 
     print_error_at(source, index, message.as_str());

@@ -5,7 +5,7 @@ use std::{
 };
 
 use errormsg::{print_interpreter_error, print_lexer_error, print_parser_error};
-use interpreter::{InterpreterError, interpret};
+use interpreter::{RuntimeError, interpret};
 use lexer::{LexerError, lexer};
 use parser::{ParserError, print_expr};
 
@@ -61,7 +61,7 @@ fn run_file(file: &String) {
 enum LoxError {
     LexerError(LexerError),
     ParserError(ParserError),
-    InterpreterError(InterpreterError),
+    InterpreterError(RuntimeError),
 }
 
 impl From<LexerError> for LoxError {
@@ -76,8 +76,8 @@ impl From<ParserError> for LoxError {
     }
 }
 
-impl From<InterpreterError> for LoxError {
-    fn from(value: InterpreterError) -> Self {
+impl From<RuntimeError> for LoxError {
+    fn from(value: RuntimeError) -> Self {
         LoxError::InterpreterError(value)
     }
 }

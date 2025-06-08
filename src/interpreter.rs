@@ -1,7 +1,7 @@
 use crate::parser::{BinaryOp, Expr, UnaryOp, Value};
 
 #[derive(Debug)]
-pub enum InterpreterError {
+pub enum RuntimeError {
     TypeError(Value, usize),
     BinaryOpUnaryTypeError(Value, BinaryOp, usize),
     BinaryOpTyperError(Value, BinaryOp, Value, usize),
@@ -9,11 +9,11 @@ pub enum InterpreterError {
     DivByZero(usize),
 }
 
-pub fn interpret(expr: &Expr) -> Result<Value, InterpreterError> {
+pub fn interpret(expr: &Expr) -> Result<Value, RuntimeError> {
     evaluate(expr)
 }
 
-fn evaluate(expr: &Expr) -> Result<Value, InterpreterError> {
+fn evaluate(expr: &Expr) -> Result<Value, RuntimeError> {
     match expr {
         Expr::Binary(lhs, op, rhs, index) => {
             let index = index.clone();
@@ -35,9 +35,7 @@ fn evaluate(expr: &Expr) -> Result<Value, InterpreterError> {
                     BinaryOp::Plus => Ok(Value::Number(a + b)),
                     BinaryOp::Minus => Ok(Value::Number(a - b)),
                     BinaryOp::Mul => Ok(Value::Number(a * b)),
-                    BinaryOp::Div if f64_equals(b, &0.0) => {
-                        Err(InterpreterError::DivByZero(rhs_index))
-                    }
+                    BinaryOp::Div if f64_equals(b, &0.0) => Err(RuntimeError::DivByZero(rhs_index)),
                     BinaryOp::Div => Ok(Value::Number(a / b)),
                 },
 
@@ -66,53 +64,41 @@ fn evaluate(expr: &Expr) -> Result<Value, InterpreterError> {
                 (Value::Nil, BinaryOp::NotEq, _) => Ok(Value::Bool(true)),
 
                 // precise type errors
-                (Value::Number(_), op, val) => Err(InterpreterError::BinaryOpUnaryTypeError(
+                (Value::Number(_), op, val) => Err(RuntimeError::BinaryOpUnaryTypeError(
                     val.clone(),
                     op.clone(),
                     rhs_index,
                 )),
-                (val, op, Value::Number(_)) => Err(InterpreterError::BinaryOpUnaryTypeError(
+                (val, op, Value::Number(_)) => Err(RuntimeError::BinaryOpUnaryTypeError(
                     val.clone(),
                     op.clone(),
                     lhs_index,
                 )),
-                (Value::String(_), BinaryOp::Eq, val) => Err(
-                    InterpreterError::BinaryOpUnaryTypeError(val.clone(), BinaryOp::Eq, rhs_index),
+                (Value::String(_), BinaryOp::Eq, val) => Err(RuntimeError::BinaryOpUnaryTypeError(
+                    val.clone(),
+                    BinaryOp::Eq,
+                    rhs_index,
+                )),
+                (val, BinaryOp::Eq, Value::String(_)) => Err(RuntimeError::BinaryOpUnaryTypeError(
+                    val.clone(),
+                    BinaryOp::Eq,
+                    lhs_index,
+                )),
+                (Value::String(_), BinaryOp::NotEq, val) => Err(
+                    RuntimeError::BinaryOpUnaryTypeError(val.clone(), BinaryOp::NotEq, rhs_index),
                 ),
-                (val, BinaryOp::Eq, Value::String(_)) => Err(
-                    InterpreterError::BinaryOpUnaryTypeError(val.clone(), BinaryOp::Eq, lhs_index),
+                (val, BinaryOp::NotEq, Value::String(_)) => Err(
+                    RuntimeError::BinaryOpUnaryTypeError(val.clone(), BinaryOp::NotEq, lhs_index),
                 ),
-                (Value::String(_), BinaryOp::NotEq, val) => {
-                    Err(InterpreterError::BinaryOpUnaryTypeError(
-                        val.clone(),
-                        BinaryOp::NotEq,
-                        rhs_index,
-                    ))
-                }
-                (val, BinaryOp::NotEq, Value::String(_)) => {
-                    Err(InterpreterError::BinaryOpUnaryTypeError(
-                        val.clone(),
-                        BinaryOp::NotEq,
-                        lhs_index,
-                    ))
-                }
-                (Value::String(_), BinaryOp::Plus, val) => {
-                    Err(InterpreterError::BinaryOpUnaryTypeError(
-                        val.clone(),
-                        BinaryOp::Plus,
-                        rhs_index,
-                    ))
-                }
-                (val, BinaryOp::Plus, Value::String(_)) => {
-                    Err(InterpreterError::BinaryOpUnaryTypeError(
-                        val.clone(),
-                        BinaryOp::Plus,
-                        lhs_index,
-                    ))
-                }
+                (Value::String(_), BinaryOp::Plus, val) => Err(
+                    RuntimeError::BinaryOpUnaryTypeError(val.clone(), BinaryOp::Plus, rhs_index),
+                ),
+                (val, BinaryOp::Plus, Value::String(_)) => Err(
+                    RuntimeError::BinaryOpUnaryTypeError(val.clone(), BinaryOp::Plus, lhs_index),
+                ),
 
                 // if nothing else matches throw an binary op type error
-                _ => Err(InterpreterError::BinaryOpTyperError(
+                _ => Err(RuntimeError::BinaryOpTyperError(
                     lhs,
                     op.clone(),
                     rhs,
@@ -128,7 +114,7 @@ fn evaluate(expr: &Expr) -> Result<Value, InterpreterError> {
 
             match (op, &rhs) {
                 (UnaryOp::Neg, Value::Number(num)) => Ok(Value::Number(-num)),
-                (UnaryOp::Neg, _) => Err(InterpreterError::UnaryOpTypeError(
+                (UnaryOp::Neg, _) => Err(RuntimeError::UnaryOpTypeError(
                     rhs.clone(),
                     op.clone(),
                     rhs_index,
