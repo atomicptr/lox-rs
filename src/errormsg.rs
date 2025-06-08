@@ -1,3 +1,5 @@
+use std::fmt::format;
+
 use crate::{lexer::LexerError, parser::ParserError};
 
 fn pos_from_index(source: &str, index: usize) -> Option<(usize, usize)> {
@@ -74,13 +76,20 @@ pub fn print_parser_error(source: &String, err: ParserError) {
         ParserError::CouldntFindRParen(index) => {
             ("could not find ')' after expression.".to_string(), index)
         }
-        ParserError::UnexpectedEOF => ("unexpected end of file".to_string(), source.len() - 1),
+        ParserError::ExpectedExpression(index) => ("expected expression".to_string(), index),
     };
 
     print_error_at(source, index, message.as_str());
 }
 
 pub fn print_error_at(source: &str, index: usize, error: &str) {
+    // if index goes beyond source code, append one character and set index to the last char
+    let (index, source) = if index >= source.len() {
+        (source.len(), format!("{source} "))
+    } else {
+        (index, source.to_string())
+    };
+
     if let Some((line, col)) = pos_from_index(&source, index) {
         if let Some(line_text) = get_line(&source, line) {
             println!("\n");
@@ -107,8 +116,8 @@ pub fn print_error_at(source: &str, index: usize, error: &str) {
             return;
         }
 
-        panic!("could not find line: {line} col: {col}");
+        panic!("could not find line: {line} col: {col}, error: {error}");
     }
 
-    panic!("could not find index: {index}");
+    panic!("could not find index: {index}, error: {error}");
 }

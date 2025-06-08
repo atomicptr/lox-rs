@@ -1,5 +1,3 @@
-use std::thread::current;
-
 use crate::lexer::Token;
 
 #[derive(Debug)]
@@ -84,8 +82,8 @@ pub struct Parser {
 #[derive(Debug)]
 pub enum ParserError {
     UnexpectedToken(Token, usize),
+    ExpectedExpression(usize),
     CouldntFindRParen(usize),
-    UnexpectedEOF,
 }
 
 /*
@@ -249,11 +247,8 @@ impl Parser {
             return Err(ParserError::CouldntFindRParen(0));
         }
 
-        if let Some((token, index)) = self.current() {
-            return Err(ParserError::UnexpectedToken(token.clone(), index.clone()));
-        }
-
-        return Err(ParserError::UnexpectedEOF);
+        let (_, index) = self.current().unwrap();
+        Err(ParserError::ExpectedExpression(index.clone()))
     }
 
     fn sync(&mut self) {
