@@ -1,5 +1,3 @@
-use std::fmt::format;
-
 use crate::{interpreter::InterpreterError, lexer::LexerError, parser::ParserError};
 
 fn pos_from_index(source: &str, index: usize) -> Option<(usize, usize)> {
@@ -50,7 +48,7 @@ fn print_annotated_line(
 
     if let Some(annotation) = annotation {
         let whitespace = " ".repeat(format!("\t {:3} | ", l).len() + c - 1);
-        println!("\t{whitespace}\x1b[31m^ --- {annotation}\x1b[0m"); // TODO: if too long split into multiple lines
+        println!("\t{whitespace}\x1b[31m└─── {annotation}\x1b[0m"); // TODO: if too long split into multiple lines
     }
 }
 
@@ -82,7 +80,31 @@ pub fn print_parser_error(source: &String, err: ParserError) {
     print_error_at(source, index, message.as_str());
 }
 
-pub fn print_interpreter_error(source: &String, err: InterpreterError) {}
+pub fn print_interpreter_error(source: &String, err: InterpreterError) {
+    let (message, index) = match err {
+        InterpreterError::TypeError(val, index) => {
+            (format!("value '{:?}' can't be used here", val), index)
+        }
+        InterpreterError::BinaryOpUnaryTypeError(value, op, index) => (
+            format!("operator '{op}' can't be used with '{:?}'", value),
+            index,
+        ),
+        InterpreterError::BinaryOpTyperError(lhs, op, rhs, index) => (
+            format!(
+                "operator '{op}' for '{:?}' and '{:?}' is not allowed",
+                lhs, rhs
+            ),
+            index,
+        ),
+        InterpreterError::UnaryOpTypeError(value, op, index) => (
+            format!("unary operator '{op}' can not be used with {:?}", value),
+            index,
+        ),
+        InterpreterError::DivByZero(index) => ("division by zero".to_string(), index),
+    };
+
+    print_error_at(source, index, message.as_str());
+}
 
 pub fn print_error_at(source: &str, index: usize, error: &str) {
     // if index goes beyond source code, append one character and set index to the last char

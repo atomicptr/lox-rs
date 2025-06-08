@@ -85,17 +85,13 @@ impl From<InterpreterError> for LoxError {
 fn run(code: &String) -> Result<(), LoxError> {
     let tokens = lexer(&code)?;
 
-    println!("Code:\n\n{code}\n\nTokens:\n\n{:?}", tokens);
-
     let ast = parser::parse(tokens)?;
-
-    println!("\n\nAST:\n");
 
     print_expr(&ast, 0);
 
     let value = interpret(&ast)?;
 
-    println!("Result = {:?}", value);
+    println!("{}", value);
 
     Ok(())
 }

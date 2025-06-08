@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use crate::lexer::Token;
 
 #[derive(Debug, Clone)]
@@ -8,7 +10,22 @@ pub enum Value {
     Nil,
 }
 
-#[derive(Debug)]
+impl Display for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let res = match self {
+            Value::String(s) => format!("\"{s}\""),
+            Value::Number(n) => format!("{n}"),
+            Value::Bool(b) => format!("{b}"),
+            Value::Nil => "nil".to_string(),
+        };
+
+        write!(f, "{res}")?;
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum BinaryOp {
     Eq,
     NotEq,
@@ -20,6 +37,27 @@ pub enum BinaryOp {
     Minus,
     Mul,
     Div,
+}
+
+impl Display for BinaryOp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let res = match self {
+            BinaryOp::Eq => "=",
+            BinaryOp::NotEq => "==",
+            BinaryOp::Lesser => "<",
+            BinaryOp::LesserEq => "<=",
+            BinaryOp::Greater => ">",
+            BinaryOp::GreaterEq => ">=",
+            BinaryOp::Plus => "+",
+            BinaryOp::Minus => "-",
+            BinaryOp::Mul => "*",
+            BinaryOp::Div => "/",
+        };
+
+        write!(f, "{res}")?;
+
+        Ok(())
+    }
 }
 
 impl TryFrom<Token> for BinaryOp {
@@ -42,10 +80,23 @@ impl TryFrom<Token> for BinaryOp {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum UnaryOp {
     Not,
     Neg,
+}
+
+impl Display for UnaryOp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let res = match self {
+            UnaryOp::Not => "!",
+            UnaryOp::Neg => "-",
+        };
+
+        write!(f, "{res}")?;
+
+        Ok(())
+    }
 }
 
 impl TryFrom<Token> for UnaryOp {
@@ -62,10 +113,21 @@ impl TryFrom<Token> for UnaryOp {
 
 #[derive(Debug)]
 pub enum Expr {
-    Binary(Box<Expr>, BinaryOp, Box<Expr>),
-    Grouping(Box<Expr>),
-    Literal(Value),
-    Unary(UnaryOp, Box<Expr>),
+    Binary(Box<Expr>, BinaryOp, Box<Expr>, usize),
+    Grouping(Box<Expr>, (usize, usize)),
+    Literal(Value, usize),
+    Unary(UnaryOp, Box<Expr>, usize),
+}
+
+impl Expr {
+    pub fn token_index(&self) -> usize {
+        match self {
+            Expr::Binary(_, _, _, index) => index.clone(),
+            Expr::Grouping(_, (start, _)) => start.clone(),
+            Expr::Literal(_, index) => index.clone(),
+            Expr::Unary(_, _, index) => index.clone(),
+        }
+    }
 }
 
 pub fn parse(tokens: Vec<(Token, usize)>) -> Result<Expr, ParserError> {
@@ -118,14 +180,12 @@ impl Parser {
         let mut expr = self.comparison()?;
 
         while self.matches(&[Token::NotEqual, Token::EqualEqual]) {
-            let operator = self
+            let (operator, op_index) = self
                 .previous()
-                .map(|(t, _)| t.clone())
-                .unwrap()
-                .try_into()
+                .map(|(t, i)| (t.clone().try_into().unwrap(), i.clone()))
                 .unwrap();
             let right = self.comparison()?;
-            expr = Expr::Binary(Box::new(expr), operator, Box::new(right));
+            expr = Expr::Binary(Box::new(expr), operator, Box::new(right), op_index);
         }
 
         Ok(expr)
@@ -141,14 +201,12 @@ impl Parser {
             Token::Less,
             Token::LessEqual,
         ]) {
-            let operator = self
+            let (operator, op_index) = self
                 .previous()
-                .map(|(t, _)| t.clone())
-                .unwrap()
-                .try_into()
+                .map(|(t, i)| (t.clone().try_into().unwrap(), i.clone()))
                 .unwrap();
             let right = self.term()?;
-            expr = Expr::Binary(Box::new(expr), operator, Box::new(right));
+            expr = Expr::Binary(Box::new(expr), operator, Box::new(right), op_index);
         }
 
         Ok(expr)
@@ -159,14 +217,12 @@ impl Parser {
         let mut expr = self.factor()?;
 
         while self.matches(&[Token::Minus, Token::Plus]) {
-            let operator = self
+            let (operator, op_index) = self
                 .previous()
-                .map(|(t, _)| t.clone())
-                .unwrap()
-                .try_into()
+                .map(|(t, i)| (t.clone().try_into().unwrap(), i.clone()))
                 .unwrap();
             let right = self.factor()?;
-            expr = Expr::Binary(Box::new(expr), operator, Box::new(right));
+            expr = Expr::Binary(Box::new(expr), operator, Box::new(right), op_index);
         }
 
         Ok(expr)
@@ -177,14 +233,12 @@ impl Parser {
         let mut expr = self.unary()?;
 
         while self.matches(&[Token::Slash, Token::Star]) {
-            let operator = self
+            let (operator, op_index) = self
                 .previous()
-                .map(|(t, _)| t.clone())
-                .unwrap()
-                .try_into()
+                .map(|(t, i)| (t.clone().try_into().unwrap(), i.clone()))
                 .unwrap();
             let right = self.unary()?;
-            expr = Expr::Binary(Box::new(expr), operator, Box::new(right));
+            expr = Expr::Binary(Box::new(expr), operator, Box::new(right), op_index);
         }
 
         Ok(expr)
@@ -194,14 +248,12 @@ impl Parser {
     //                   | primary ;
     fn unary(&mut self) -> Result<Expr, ParserError> {
         if self.matches(&[Token::Bang, Token::Minus]) {
-            let operator = self
+            let (operator, op_index) = self
                 .previous()
-                .map(|(t, _)| t.clone())
-                .unwrap()
-                .try_into()
+                .map(|(t, i)| (t.clone().try_into().unwrap(), i.clone()))
                 .unwrap();
             let right = self.unary()?;
-            return Ok(Expr::Unary(operator, Box::new(right)));
+            return Ok(Expr::Unary(operator, Box::new(right), op_index));
         }
 
         self.primary()
@@ -210,37 +262,42 @@ impl Parser {
     // primary        → NUMBER | STRING | "true" | "false" | "nil"
     //                 | "(" expression ")" ;
     fn primary(&mut self) -> Result<Expr, ParserError> {
-        if self.matches(&[Token::Bool(false)]) {
-            return Ok(Expr::Literal(Value::Bool(false)));
-        }
-
-        if self.matches(&[Token::Bool(true)]) {
-            return Ok(Expr::Literal(Value::Bool(true)));
-        }
-
         if self.matches(&[Token::Nil]) {
-            return Ok(Expr::Literal(Value::Nil));
+            let (_, index) = self.current().unwrap();
+            return Ok(Expr::Literal(Value::Nil, *index));
         }
 
-        if let Some((current, _)) = self.current() {
+        if let Some((current, index)) = self.current() {
+            let index = index.clone();
+
+            if let Token::Bool(b) = current {
+                let b = b.clone();
+                let _ = self.advance();
+                return Ok(Expr::Literal(Value::Bool(b), index));
+            }
+
             if let Token::String(str) = current {
                 let str = str.clone();
                 let _ = self.advance();
-                return Ok(Expr::Literal(Value::String(str)));
+                return Ok(Expr::Literal(Value::String(str), index));
             }
 
             if let Token::Number(num) = current {
                 let num = num.clone();
                 let _ = self.advance();
-                return Ok(Expr::Literal(Value::Number(num)));
+                return Ok(Expr::Literal(Value::Number(num), index));
             }
         }
 
         if self.matches(&[Token::LParen]) {
             let expr = self.expression()?;
 
-            if let Some(_) = self.consume(Token::RParen) {
-                return Ok(Expr::Grouping(Box::new(expr)));
+            let (_, start) = self.current().unwrap();
+            let start = start.clone();
+
+            if let Some((_, end)) = self.consume(Token::RParen) {
+                let end = end.clone();
+                return Ok(Expr::Grouping(Box::new(expr), (start, end)));
             }
 
             // TODO: get the index
@@ -335,20 +392,20 @@ pub fn print_expr(expr: &Expr, indent_level: usize) {
     let indent = " ".repeat(indent_level * 4);
 
     match expr {
-        Expr::Binary(left, op, right) => {
+        Expr::Binary(left, op, right, _) => {
             println!("{indent}Binary (Operator: {:?})", op);
             print_expr(left, indent_level + 1);
             print_expr(right, indent_level + 1);
         }
-        Expr::Grouping(inner_expr) => {
+        Expr::Grouping(inner_expr, _) => {
             println!("{indent}Group:");
             print_expr(inner_expr, indent_level + 1);
         }
-        Expr::Unary(op, expr) => {
+        Expr::Unary(op, expr, _) => {
             println!("{indent}Unary: (Operator {:?})", op);
             print_expr(expr, indent_level + 1);
         }
-        Expr::Literal(value) => match value {
+        Expr::Literal(value, _) => match value {
             Value::String(s) => println!("{indent}Literal (String) = {s}"),
             Value::Number(n) => println!("{indent}Literal (Number) = {n}"),
             Value::Bool(b) => println!("{indent}Literal (Bool) = {b}"),
@@ -370,12 +427,14 @@ mod tests {
         ])
         .expect("can parse");
 
-        if let Expr::Binary(a, BinaryOp::Plus, b) = ast {
+        if let Expr::Binary(a, BinaryOp::Plus, b, _) = ast {
             let a = *a;
             let b = *b;
 
             let matched = match (a, b) {
-                (Expr::Literal(Value::Number(5.0)), Expr::Literal(Value::Number(10.0))) => true,
+                (Expr::Literal(Value::Number(5.0), _), Expr::Literal(Value::Number(10.0), _)) => {
+                    true
+                }
                 _ => false,
             };
 
