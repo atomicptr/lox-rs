@@ -126,7 +126,7 @@ pub fn lexer(source: &str) -> Result<Vec<(Token, usize)>, LexerError> {
                         _ => Some((Token::Bang, current)),
                     }
                 } else {
-                    None
+                    Some((Token::Bang, current))
                 }
             }
             '=' => {
@@ -139,7 +139,7 @@ pub fn lexer(source: &str) -> Result<Vec<(Token, usize)>, LexerError> {
                         _ => Some((Token::Equal, current)),
                     }
                 } else {
-                    None
+                    Some((Token::Equal, current))
                 }
             }
             '>' => {
@@ -152,7 +152,7 @@ pub fn lexer(source: &str) -> Result<Vec<(Token, usize)>, LexerError> {
                         _ => Some((Token::Greater, current)),
                     }
                 } else {
-                    None
+                    Some((Token::Greater, current))
                 }
             }
             '<' => {
@@ -165,7 +165,7 @@ pub fn lexer(source: &str) -> Result<Vec<(Token, usize)>, LexerError> {
                         _ => Some((Token::Less, current)),
                     }
                 } else {
-                    None
+                    Some((Token::Less, current))
                 }
             }
             '/' => {
@@ -203,7 +203,7 @@ pub fn lexer(source: &str) -> Result<Vec<(Token, usize)>, LexerError> {
                         _ => Some((Token::Slash, current)),
                     }
                 } else {
-                    None
+                    Some((Token::Slash, current))
                 }
             }
             '"' => {
@@ -594,5 +594,33 @@ mod tests {
     #[test]
     fn test_should_parse_error() {
         let _ = lexer("var x = \";").expect_err("should throw unterminated string");
+    }
+
+    #[test]
+    fn test_simple_invalid_expression() {
+        let tokens = lexer("5 + 3 /").expect("able to parse");
+        let mut tokens = tokens.iter();
+
+        let (t, pos) = tokens.next().unwrap();
+        assert_eq!(*t, Token::Number(5.0));
+        assert_eq!(*pos, 0);
+
+        let (t, pos) = tokens.next().unwrap();
+        assert_eq!(*t, Token::Plus);
+        assert_eq!(*pos, 2);
+
+        let (t, pos) = tokens.next().unwrap();
+        assert_eq!(*t, Token::Number(3.0));
+        assert_eq!(*pos, 4);
+
+        let (t, pos) = tokens.next().unwrap();
+        assert_eq!(*t, Token::Slash);
+        assert_eq!(*pos, 6);
+
+        let (t, pos) = tokens.next().unwrap();
+        assert_eq!(*t, Token::Eof);
+        assert_eq!(*pos, 7);
+
+        assert_eq!(0, tokens.len(), "handled all tokens");
     }
 }
