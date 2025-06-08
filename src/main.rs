@@ -6,7 +6,7 @@ use std::{
 
 use errormsg::{print_lexer_error, print_parser_error};
 use lexer::{LexerError, lexer};
-use parser::ParserError;
+use parser::{ParserError, print_expr};
 
 mod errormsg;
 mod lexer;
@@ -78,7 +78,9 @@ fn run(code: &String) -> Result<(), LoxError> {
 
     let ast = parser::parse(tokens)?;
 
-    println!("\n\nAST:\n\n{:?}", ast);
+    println!("\n\nAST:\n\n");
+
+    print_expr(&ast, 0);
 
     Ok(())
 }

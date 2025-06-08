@@ -331,6 +331,32 @@ impl Parser {
     }
 }
 
+pub fn print_expr(expr: &Expr, indent_level: usize) {
+    let indent = " ".repeat(indent_level * 4);
+
+    match expr {
+        Expr::Binary(left, op, right) => {
+            println!("{indent}Binary (Operator: {:?})", op);
+            print_expr(left, indent_level + 1);
+            print_expr(right, indent_level + 1);
+        }
+        Expr::Grouping(inner_expr) => {
+            println!("{indent}Group:");
+            print_expr(inner_expr, indent_level + 1);
+        }
+        Expr::Unary(op, expr) => {
+            println!("{indent}Unary: (Operator {:?})", op);
+            print_expr(expr, indent_level + 1);
+        }
+        Expr::Literal(value) => match value {
+            Value::String(s) => println!("{indent}Literal (String) = {s}"),
+            Value::Number(n) => println!("{indent}Literal (Number) = {n}"),
+            Value::Bool(b) => println!("{indent}Literal (Bool) = {b}"),
+            Value::Nil => println!("{indent}Literal (Nil)"),
+        },
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
