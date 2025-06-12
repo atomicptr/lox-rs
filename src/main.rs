@@ -5,7 +5,7 @@ use std::{
 };
 
 use errormsg::{print_interpreter_error, print_lexer_error, print_parser_error};
-use interpreter::{Env, RuntimeError};
+use interpreter::{Env, Interpreter, RuntimeError};
 use lexer::{LexerError, lexer};
 use parser::{ParserError, print_stmt};
 
@@ -28,7 +28,7 @@ fn main() {
 }
 
 fn run_prompt() {
-    let mut env = Env::default();
+    let mut interpreter = Interpreter::default();
 
     loop {
         let mut s = String::new();
@@ -40,7 +40,7 @@ fn run_prompt() {
 
         let s = s.trim().to_string();
 
-        match run(&mut env, &s) {
+        match run(&mut interpreter, &s) {
             Ok(()) => {}
             Err(LoxError::LexerError(err)) => print_lexer_error(&s, err),
             Err(LoxError::ParserError(err)) => print_parser_error(&s, err),
@@ -52,9 +52,9 @@ fn run_prompt() {
 fn run_file(file: &String) {
     let source = fs::read_to_string(file).expect("error reading file");
 
-    let mut env = Env::default();
+    let mut interpreter = Interpreter::default();
 
-    match run(&mut env, &source) {
+    match run(&mut interpreter, &source) {
         Ok(()) => {}
         Err(LoxError::LexerError(err)) => print_lexer_error(&source, err),
         Err(LoxError::ParserError(err)) => print_parser_error(&source, err),
@@ -86,7 +86,7 @@ impl From<RuntimeError> for LoxError {
     }
 }
 
-fn run(env: &mut Env, code: &String) -> Result<(), LoxError> {
+fn run(interpreter: &mut Interpreter, code: &String) -> Result<(), LoxError> {
     let tokens = lexer(&code)?;
 
     let stmts = parser::parse(tokens)?;
@@ -95,7 +95,7 @@ fn run(env: &mut Env, code: &String) -> Result<(), LoxError> {
         print_stmt(stmt, 0);
     }
 
-    let value = env.interpret(&stmts)?;
+    let value = interpreter.run(&stmts)?;
 
     println!("{}", value);
 

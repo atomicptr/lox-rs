@@ -7,6 +7,11 @@ pub struct Env {
     vars: HashMap<String, Value>,
 }
 
+#[derive(Debug, Default)]
+pub struct Interpreter {
+    env: Env,
+}
+
 #[derive(Debug)]
 pub enum RuntimeError {
     TypeError(Value, usize),
@@ -17,8 +22,8 @@ pub enum RuntimeError {
     UnknownVariable(String, usize),
 }
 
-impl Env {
-    pub fn interpret(&mut self, stmts: &Vec<Stmt>) -> Result<Value, RuntimeError> {
+impl Interpreter {
+    pub fn run(&mut self, stmts: &Vec<Stmt>) -> Result<Value, RuntimeError> {
         let mut value = Value::Nil;
 
         for stmt in stmts.iter() {
@@ -38,13 +43,13 @@ impl Env {
             Stmt::Expr(expr, _) => self.evaluate_expr(expr),
             Stmt::Var(name, expr, _) => {
                 let value = self.evaluate_expr(expr)?;
-                self.vars.insert(name.clone(), value);
+                self.env.vars.insert(name.clone(), value);
                 Ok(Value::Nil)
             }
         }
     }
 
-    fn evaluate_expr(&self, expr: &Expr) -> Result<Value, RuntimeError> {
+    fn evaluate_expr(&mut self, expr: &Expr) -> Result<Value, RuntimeError> {
         match expr {
             Expr::Binary(lhs, op, rhs, index) => {
                 let index = index.clone();
@@ -186,8 +191,18 @@ impl Env {
                     (UnaryOp::Not, value) => Ok(Value::Bool(!is_truthy(&value))),
                 }
             }
-            Expr::Variable(name, index) => match self.vars.get(name) {
+            Expr::Variable(name, index) => match self.env.vars.get(name) {
                 Some(value) => Ok(value.clone()),
+                None => Err(RuntimeError::UnknownVariable(name.clone(), index.clone())),
+            },
+            Expr::Assignment(name, expr, index) => match self.env.vars.get(name) {
+                Some(_) => {
+                    let value = self.evaluate_expr(expr)?;
+
+                    self.env.vars.insert(name.clone(), value.clone());
+
+                    Ok(value)
+                }
                 None => Err(RuntimeError::UnknownVariable(name.clone(), index.clone())),
             },
         }

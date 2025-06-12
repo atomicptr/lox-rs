@@ -81,6 +81,9 @@ pub fn print_parser_error(source: &String, err: ParserError) {
         ParserError::ExpectedSemicolonAfterExpr(index) => {
             ("expected ';' after expression".to_string(), index)
         }
+        ParserError::InvalidAssignmentTarget(index) => {
+            ("invalid assignment target".to_string(), index)
+        }
     };
 
     print_error_at(source, index, message.as_str());

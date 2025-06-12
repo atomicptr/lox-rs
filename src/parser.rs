@@ -118,6 +118,7 @@ pub enum Expr {
     Literal(Value, usize),
     Unary(UnaryOp, Box<Expr>, usize),
     Variable(String, usize),
+    Assignment(String, Box<Expr>, usize),
 }
 
 impl Expr {
@@ -128,6 +129,7 @@ impl Expr {
             Expr::Literal(_, index) => index.clone(),
             Expr::Unary(_, _, index) => index.clone(),
             Expr::Variable(_, index) => index.clone(),
+            Expr::Assignment(_, _, index) => index.clone(),
         }
     }
 }
@@ -157,6 +159,7 @@ pub enum ParserError {
     CouldntFindRParen(usize),
     ExpectedSemicolonAfterStmt(usize),
     ExpectedSemicolonAfterExpr(usize),
+    InvalidAssignmentTarget(usize),
 }
 
 /*
@@ -170,7 +173,8 @@ varDecl        → "var" IDENTIFIER ( "=" expression )? ";" ;
 statement      → exprStmt | printStmt ;
 exprStmt       → expression ";" ;
 printStmt      → "print" expression ";" ;
-expression     → equality ;
+expression     → assignment ;
+assignment     → IDENTIFIER "=" assignment | equality;
 equality       → comparison ( ( "!=" | "==" ) comparison )* ;
 comparison     → term ( ( ">" | ">=" | "<" | "<=" ) term )* ;
 term           → factor ( ( "-" | "+" ) factor )* ;
@@ -272,9 +276,28 @@ impl Parser {
         }
     }
 
-    // expression     → equality ;
+    // expression     → assignment ;
     fn expression(&mut self) -> Result<Expr, ParserError> {
-        self.equality()
+        self.assignment()
+    }
+
+    fn assignment(&mut self) -> Result<Expr, ParserError> {
+        let expr = self.equality()?;
+
+        if self.matches(&[Token::Equal]) {
+            let (_, eq_index) = self.previous().unwrap();
+            let index = eq_index.clone();
+
+            let value = self.assignment()?;
+
+            if let Expr::Variable(name, index) = expr {
+                return Ok(Expr::Assignment(name, Box::new(value), index));
+            }
+
+            return Err(ParserError::InvalidAssignmentTarget(index));
+        }
+
+        Ok(expr)
     }
 
     // equality       → comparison ( ( "!=" | "==" ) comparison )* ;
@@ -545,6 +568,7 @@ pub fn print_expr(expr: &Expr, indent_level: usize) {
             Value::Nil => println!("{indent}Literal (Nil)"),
         },
         Expr::Variable(name, _) => println!("{indent}var {name}"),
+        Expr::Assignment(name, expr, _) => println!("{indent}assign var {name} = {:?}", expr),
     }
 }
 
