@@ -1,4 +1,4 @@
-use crate::parser::{BinaryOp, Expr, UnaryOp, Value};
+use crate::parser::{BinaryOp, Expr, Stmt, UnaryOp, Value};
 
 #[derive(Debug)]
 pub enum RuntimeError {
@@ -9,19 +9,36 @@ pub enum RuntimeError {
     DivByZero(usize),
 }
 
-pub fn interpret(expr: &Expr) -> Result<Value, RuntimeError> {
-    evaluate(expr)
+pub fn interpret(stmts: &Vec<Stmt>) -> Result<Value, RuntimeError> {
+    let mut value = Value::Nil;
+
+    for stmt in stmts.iter() {
+        value = evaluate_stmt(stmt)?;
+    }
+
+    Ok(value)
 }
 
-fn evaluate(expr: &Expr) -> Result<Value, RuntimeError> {
+fn evaluate_stmt(stmt: &Stmt) -> Result<Value, RuntimeError> {
+    match stmt {
+        Stmt::Print(expr, _) => {
+            let value = evaluate_expr(expr)?;
+            println!("{}", value);
+            Ok(Value::Nil)
+        }
+        Stmt::Expr(expr, _) => evaluate_expr(expr),
+    }
+}
+
+fn evaluate_expr(expr: &Expr) -> Result<Value, RuntimeError> {
     match expr {
         Expr::Binary(lhs, op, rhs, index) => {
             let index = index.clone();
             let lhs_index = lhs.token_index();
-            let lhs = evaluate(lhs)?;
+            let lhs = evaluate_expr(lhs)?;
 
             let rhs_index = rhs.token_index();
-            let rhs = evaluate(rhs)?;
+            let rhs = evaluate_expr(rhs)?;
 
             match (&lhs, op, &rhs) {
                 // number operations
@@ -125,11 +142,11 @@ fn evaluate(expr: &Expr) -> Result<Value, RuntimeError> {
                 )),
             }
         }
-        Expr::Grouping(expr, _) => evaluate(expr),
+        Expr::Grouping(expr, _) => evaluate_expr(expr),
         Expr::Literal(value, _) => Ok(value.clone()),
         Expr::Unary(op, rhs, _) => {
             let rhs_index = rhs.token_index();
-            let rhs = evaluate(rhs)?;
+            let rhs = evaluate_expr(rhs)?;
 
             match (op, &rhs) {
                 (UnaryOp::Neg, Value::Number(num)) => Ok(Value::Number(-num)),

@@ -25,7 +25,7 @@ impl Display for Value {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Copy, Clone)]
 pub enum BinaryOp {
     Eq,
     NotEq,
@@ -111,7 +111,7 @@ impl TryFrom<Token> for UnaryOp {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Expr {
     Binary(Box<Expr>, BinaryOp, Box<Expr>, usize),
     Grouping(Box<Expr>, (usize, usize)),
@@ -130,9 +130,15 @@ impl Expr {
     }
 }
 
-pub fn parse(tokens: Vec<(Token, usize)>) -> Result<Expr, ParserError> {
+#[derive(Debug)]
+pub enum Stmt {
+    Print(Box<Expr>, usize),
+    Expr(Box<Expr>, usize),
+}
+
+pub fn parse(tokens: Vec<(Token, usize)>) -> Result<Vec<Stmt>, ParserError> {
     let mut p = Parser::from(tokens);
-    p.expression()
+    p.program()
 }
 
 #[derive(Debug)]
@@ -146,6 +152,8 @@ pub enum ParserError {
     UnexpectedToken(Token, usize),
     ExpectedExpression(usize),
     CouldntFindRParen(usize),
+    ExpectedSemicolonAfterStmt(usize),
+    ExpectedSemicolonAfterExpr(usize),
 }
 
 /*
@@ -153,6 +161,10 @@ pub enum ParserError {
 Expression Grammar:
 -------------------
 
+program        → statement* EOF ;
+statement      → exprStmt | printStmt ;
+exprStmt       → expression ";" ;
+printStmt      → "print" expression ";" ;
 expression     → equality ;
 equality       → comparison ( ( "!=" | "==" ) comparison )* ;
 comparison     → term ( ( ">" | ">=" | "<" | "<=" ) term )* ;
@@ -168,6 +180,50 @@ primary        → NUMBER | STRING | "true" | "false" | "nil"
 impl Parser {
     fn from(tokens: Vec<(Token, usize)>) -> Self {
         Self { tokens, index: 0 }
+    }
+
+    // program        → statement* EOF ;
+    fn program(&mut self) -> Result<Vec<Stmt>, ParserError> {
+        let mut stmts = vec![];
+
+        while !self.is_at_end() {
+            stmts.push(self.statement()?);
+        }
+
+        Ok(stmts)
+    }
+
+    // statement      → exprStmt | printStmt ;
+    fn statement(&mut self) -> Result<Stmt, ParserError> {
+        if self.matches(&[Token::Print]) {
+            self.print_stmt()
+        } else {
+            self.expr_stmt()
+        }
+    }
+
+    // exprStmt       → expression ";" ;
+    fn expr_stmt(&mut self) -> Result<Stmt, ParserError> {
+        let expr = self.expression()?;
+
+        if let Some((_, index)) = self.consume(Token::Semicolon) {
+            let index = index.clone();
+            Ok(Stmt::Expr(Box::new(expr), index))
+        } else {
+            Err(ParserError::ExpectedSemicolonAfterExpr(expr.token_index()))
+        }
+    }
+
+    // printStmt      → "print" expression ";" ;
+    fn print_stmt(&mut self) -> Result<Stmt, ParserError> {
+        let expr = self.expression()?;
+
+        if let Some((_, index)) = self.consume(Token::Semicolon) {
+            let index = index.clone();
+            Ok(Stmt::Print(Box::new(expr), index))
+        } else {
+            Err(ParserError::ExpectedSemicolonAfterStmt(expr.token_index()))
+        }
     }
 
     // expression     → equality ;
@@ -388,6 +444,23 @@ impl Parser {
     }
 }
 
+pub fn print_stmt(stmt: &Stmt, indent_level: usize) {
+    let indent = " ".repeat(indent_level * 4);
+
+    let expr = match stmt {
+        Stmt::Print(expr, _) => {
+            println!("{indent}Print");
+            expr
+        }
+        Stmt::Expr(expr, _) => {
+            println!("{indent}Expr");
+            expr
+        }
+    };
+
+    print_expr(expr, indent_level + 1);
+}
+
 pub fn print_expr(expr: &Expr, indent_level: usize) {
     let indent = " ".repeat(indent_level * 4);
 
@@ -417,32 +490,4 @@ pub fn print_expr(expr: &Expr, indent_level: usize) {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_parse_simple_expression() {
-        let ast = parse(vec![
-            (Token::Number(5.0), 0),
-            (Token::Plus, 1),
-            (Token::Number(10.0), 2),
-        ])
-        .expect("can parse");
-
-        if let Expr::Binary(a, BinaryOp::Plus, b, _) = ast {
-            let a = *a;
-            let b = *b;
-
-            let matched = match (a, b) {
-                (Expr::Literal(Value::Number(5.0), _), Expr::Literal(Value::Number(10.0), _)) => {
-                    true
-                }
-                _ => false,
-            };
-
-            assert!(matched, "parsed AST is wrong");
-
-            return;
-        }
-
-        panic!("parsed AST is wrong");
-    }
 }

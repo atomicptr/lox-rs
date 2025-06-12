@@ -75,6 +75,12 @@ pub fn print_parser_error(source: &String, err: ParserError) {
             ("could not find ')' after expression.".to_string(), index)
         }
         ParserError::ExpectedExpression(index) => ("expected expression".to_string(), index),
+        ParserError::ExpectedSemicolonAfterStmt(index) => {
+            ("expected ';' after statement".to_string(), index)
+        }
+        ParserError::ExpectedSemicolonAfterExpr(index) => {
+            ("expected ';' after expression".to_string(), index)
+        }
     };
 
     print_error_at(source, index, message.as_str());

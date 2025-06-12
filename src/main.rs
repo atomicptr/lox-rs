@@ -7,7 +7,7 @@ use std::{
 use errormsg::{print_interpreter_error, print_lexer_error, print_parser_error};
 use interpreter::{RuntimeError, interpret};
 use lexer::{LexerError, lexer};
-use parser::{ParserError, print_expr};
+use parser::{ParserError, print_stmt};
 
 mod errormsg;
 mod interpreter;
@@ -85,11 +85,13 @@ impl From<RuntimeError> for LoxError {
 fn run(code: &String) -> Result<(), LoxError> {
     let tokens = lexer(&code)?;
 
-    let ast = parser::parse(tokens)?;
+    let stmts = parser::parse(tokens)?;
 
-    print_expr(&ast, 0);
+    for stmt in stmts.iter() {
+        print_stmt(stmt, 0);
+    }
 
-    let value = interpret(&ast)?;
+    let value = interpret(&stmts)?;
 
     println!("{}", value);
 
