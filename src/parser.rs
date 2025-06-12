@@ -117,6 +117,7 @@ pub enum Expr {
     Grouping(Box<Expr>, (usize, usize)),
     Literal(Value, usize),
     Unary(UnaryOp, Box<Expr>, usize),
+    Variable(String, usize),
 }
 
 impl Expr {
@@ -126,6 +127,7 @@ impl Expr {
             Expr::Grouping(_, (start, _)) => start.clone(),
             Expr::Literal(_, index) => index.clone(),
             Expr::Unary(_, _, index) => index.clone(),
+            Expr::Variable(_, index) => index.clone(),
         }
     }
 }
@@ -134,6 +136,7 @@ impl Expr {
 pub enum Stmt {
     Print(Box<Expr>, usize),
     Expr(Box<Expr>, usize),
+    Var(String, Box<Expr>, usize),
 }
 
 pub fn parse(tokens: Vec<(Token, usize)>) -> Result<Vec<Stmt>, ParserError> {
@@ -161,7 +164,9 @@ pub enum ParserError {
 Expression Grammar:
 -------------------
 
-program        → statement* EOF ;
+program        → declaration* EOF ;
+declaration    → varDecl | statement;
+varDecl        → "var" IDENTIFIER ( "=" expression )? ";" ;
 statement      → exprStmt | printStmt ;
 exprStmt       → expression ";" ;
 printStmt      → "print" expression ";" ;
@@ -173,7 +178,7 @@ factor         → unary ( ( "/" | "*" ) unary )* ;
 unary          → ( "!" | "-" ) unary
                | primary ;
 primary        → NUMBER | STRING | "true" | "false" | "nil"
-               | "(" expression ")" ;
+               | "(" expression ")" | IDENTIFIER ;
 
 */
 
@@ -182,15 +187,56 @@ impl Parser {
         Self { tokens, index: 0 }
     }
 
-    // program        → statement* EOF ;
+    // program        → declaration* EOF ;
     fn program(&mut self) -> Result<Vec<Stmt>, ParserError> {
         let mut stmts = vec![];
 
         while !self.is_at_end() {
-            stmts.push(self.statement()?);
+            // TODO: sync on error and collect errors
+            stmts.push(self.declaration()?);
         }
 
         Ok(stmts)
+    }
+
+    // declaration    → varDecl | statement;
+    fn declaration(&mut self) -> Result<Stmt, ParserError> {
+        if self.matches(&[Token::Var]) {
+            self.var_declaration()
+        } else {
+            self.statement()
+        }
+    }
+
+    // varDecl        → "var" IDENTIFIER ( "=" expression )? ";" ;
+    fn var_declaration(&mut self) -> Result<Stmt, ParserError> {
+        if let Some((Token::Identifier(name), index)) =
+            self.consume(Token::Identifier("".to_string()))
+        {
+            let name = name.clone();
+            let index = index.clone();
+
+            let initializer = if self.matches(&[Token::Equal]) {
+                Some(self.expression()?)
+            } else {
+                None
+            };
+
+            if let Some(_) = self.consume(Token::Semicolon) {
+                return Ok(Stmt::Var(
+                    name,
+                    Box::new(initializer.unwrap_or(Expr::Literal(Value::Nil, index.clone()))),
+                    index.clone(),
+                ));
+            }
+
+            // TODO: after var decl
+            return Err(ParserError::ExpectedSemicolonAfterStmt(index));
+        }
+
+        // syntax error not an identifier after var
+        let (token, index) = self.current().unwrap();
+        Err(ParserError::UnexpectedToken(token.clone(), index.clone()))
     }
 
     // statement      → exprStmt | printStmt ;
@@ -316,7 +362,7 @@ impl Parser {
     }
 
     // primary        → NUMBER | STRING | "true" | "false" | "nil"
-    //                 | "(" expression ")" ;
+    //                | "(" expression ")" | IDENTIFIER ;
     fn primary(&mut self) -> Result<Expr, ParserError> {
         if self.matches(&[Token::Nil]) {
             let (_, index) = self.current().unwrap();
@@ -343,6 +389,16 @@ impl Parser {
                 let _ = self.advance();
                 return Ok(Expr::Literal(Value::Number(num), index));
             }
+        }
+
+        if self.matches(&[Token::Identifier("".to_string())]) {
+            let (token, index) = self.previous().unwrap();
+
+            if let Token::Identifier(name) = token {
+                return Ok(Expr::Variable(name.clone(), index.clone()));
+            }
+
+            panic!("this should not happen");
         }
 
         if self.matches(&[Token::LParen]) {
@@ -436,7 +492,7 @@ impl Parser {
 
     fn consume(&mut self, token: Token) -> Option<&(Token, usize)> {
         if let Some((current, _)) = self.current() {
-            if token == *current {
+            if token.is_same_type(current) {
                 return self.advance();
             }
         }
@@ -454,6 +510,10 @@ pub fn print_stmt(stmt: &Stmt, indent_level: usize) {
         }
         Stmt::Expr(expr, _) => {
             println!("{indent}Expr");
+            expr
+        }
+        Stmt::Var(name, expr, _) => {
+            println!("{indent}Set var '{name}':");
             expr
         }
     };
@@ -484,6 +544,7 @@ pub fn print_expr(expr: &Expr, indent_level: usize) {
             Value::Bool(b) => println!("{indent}Literal (Bool) = {b}"),
             Value::Nil => println!("{indent}Literal (Nil)"),
         },
+        Expr::Variable(name, _) => println!("{indent}var {name}"),
     }
 }
 

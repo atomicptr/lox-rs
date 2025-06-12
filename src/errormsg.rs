@@ -107,6 +107,7 @@ pub fn print_interpreter_error(source: &String, err: RuntimeError) {
             index,
         ),
         RuntimeError::DivByZero(index) => ("division by zero".to_string(), index),
+        RuntimeError::UnknownVariable(name, index) => (format!("unknown variable '{name}'"), index),
     };
 
     print_error_at(source, index, message.as_str());
