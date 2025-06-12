@@ -4,7 +4,45 @@ use crate::parser::{BinaryOp, Expr, Stmt, UnaryOp, Value};
 
 #[derive(Debug, Default)]
 pub struct Env {
+    enclosing: Option<Box<Env>>,
     vars: HashMap<String, Value>,
+}
+
+impl Env {
+    pub fn get_var(&self, name: &String) -> Option<Value> {
+        if let Some(value) = self.vars.get(name) {
+            return Some(value.clone());
+        }
+
+        match &self.enclosing {
+            Some(env) => env.get_var(name),
+            None => None,
+        }
+    }
+
+    pub fn define(&mut self, name: &String, value: Value) {
+        self.vars.insert(name.clone(), value);
+    }
+
+    pub fn assign(
+        &mut self,
+        name: &String,
+        value: Value,
+        index: &usize,
+    ) -> Result<(), RuntimeError> {
+        // if the var exists in our scope
+        if let Some(_) = self.vars.get(name) {
+            self.vars.insert(name.clone(), value);
+            return Ok(());
+        }
+
+        // if has enclosing env, assign there
+        if let Some(env) = &mut self.enclosing {
+            return env.assign(name, value, index);
+        }
+
+        Err(RuntimeError::UnknownVariable(name.clone(), index.clone()))
+    }
 }
 
 #[derive(Debug, Default)]
@@ -43,7 +81,7 @@ impl Interpreter {
             Stmt::Expr(expr, _) => self.evaluate_expr(expr),
             Stmt::Var(name, expr, _) => {
                 let value = self.evaluate_expr(expr)?;
-                self.env.vars.insert(name.clone(), value);
+                self.env.define(name, value);
                 Ok(Value::Nil)
             }
         }
@@ -191,16 +229,14 @@ impl Interpreter {
                     (UnaryOp::Not, value) => Ok(Value::Bool(!is_truthy(&value))),
                 }
             }
-            Expr::Variable(name, index) => match self.env.vars.get(name) {
+            Expr::Variable(name, index) => match self.env.get_var(name) {
                 Some(value) => Ok(value.clone()),
                 None => Err(RuntimeError::UnknownVariable(name.clone(), index.clone())),
             },
-            Expr::Assignment(name, expr, index) => match self.env.vars.get(name) {
+            Expr::Assignment(name, expr, index) => match self.env.get_var(name) {
                 Some(_) => {
                     let value = self.evaluate_expr(expr)?;
-
-                    self.env.vars.insert(name.clone(), value.clone());
-
+                    self.env.assign(name, value.clone(), index)?;
                     Ok(value)
                 }
                 None => Err(RuntimeError::UnknownVariable(name.clone(), index.clone())),
