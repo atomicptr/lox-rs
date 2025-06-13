@@ -1,12 +1,16 @@
 use std::fmt::Display;
 
-use crate::lexer::Token;
+use crate::{
+    interpreter::{Interpreter, RuntimeError},
+    lexer::Token,
+};
 
 #[derive(Debug, Clone)]
 pub enum Value {
     String(String),
     Number(f64),
     Bool(bool),
+    Func(Fn),
     Nil,
 }
 
@@ -16,12 +20,67 @@ impl Display for Value {
             Value::String(s) => format!("\"{s}\""),
             Value::Number(n) => format!("{n}"),
             Value::Bool(b) => format!("{b}"),
+            Value::Func(fun) => format!("{fun}"),
             Value::Nil => "nil".to_string(),
         };
 
         write!(f, "{res}")?;
 
         Ok(())
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum Fn {
+    LoxFunc,
+    NativeFunc(NativeFn),
+}
+
+impl Fn {
+    pub fn arity(&self) -> usize {
+        match self {
+            Fn::LoxFunc => 0,
+            Fn::NativeFunc(fun) => match fun {
+                NativeFn::ZeroArity(_) => 0,
+            },
+        }
+    }
+
+    pub fn call(
+        &self,
+        interpreter: &mut Interpreter,
+        args: &Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        match self {
+            Fn::LoxFunc => todo!(),
+            Fn::NativeFunc(fun) => match fun {
+                NativeFn::ZeroArity(fun) => Ok(fun()),
+            },
+        }
+    }
+}
+
+impl Display for Fn {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let res = match self {
+            Fn::LoxFunc => format!("fn/{}()", self.arity()),
+            Fn::NativeFunc(_) => format!("<native> fn/{}()", self.arity()),
+        };
+
+        write!(f, "{res}")?;
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum NativeFn {
+    ZeroArity(fn() -> Value),
+}
+
+impl NativeFn {
+    pub fn as_value(self) -> Value {
+        Value::Func(Fn::NativeFunc(self))
     }
 }
 
@@ -151,6 +210,7 @@ pub enum Expr {
     Unary(UnaryOp, Box<Expr>, usize),
     Variable(String, usize),
     Assignment(String, Box<Expr>, usize),
+    Call(Box<Expr>, Vec<Box<Expr>>, usize),
 }
 
 impl Expr {
@@ -163,6 +223,7 @@ impl Expr {
             Expr::Variable(_, index) => index.clone(),
             Expr::Assignment(_, _, index) => index.clone(),
             Expr::Logical(_, _, _, index) => index.clone(),
+            Expr::Call(_, _, index) => index.clone(),
         }
     }
 }
@@ -203,6 +264,7 @@ pub enum ParserError {
     ExpectedLParenAfter(String, usize),
     ExpectedRParenAfter(String, usize),
     ExpectedSemicolonAfterLoopCondition(usize),
+    MaximumArgsExceeded(usize),
 }
 
 /*
@@ -228,8 +290,9 @@ equality       → comparison ( ( "!=" | "==" ) comparison )* ;
 comparison     → term ( ( ">" | ">=" | "<" | "<=" ) term )* ;
 term           → factor ( ( "-" | "+" ) factor )* ;
 factor         → unary ( ( "/" | "*" ) unary )* ;
-unary          → ( "!" | "-" ) unary
-               | primary ;
+unary          → ( "!" | "-" ) unary | call ;
+call           → primary ( "(" arguments? ")" )* ;
+arguments      → expression ( "," expression )* ;
 primary        → NUMBER | STRING | "true" | "false" | "nil"
                | "(" expression ")" | IDENTIFIER ;
 
@@ -643,8 +706,7 @@ impl Parser {
         Ok(expr)
     }
 
-    // unary          → ( "!" | "-" ) unary
-    //                   | primary ;
+    // unary          → ( "!" | "-" ) unary | call ;
     fn unary(&mut self) -> Result<Expr, ParserError> {
         if self.matches(&[Token::Bang, Token::Minus]) {
             let (operator, op_index) = self
@@ -655,7 +717,56 @@ impl Parser {
             return Ok(Expr::Unary(operator, Box::new(right), op_index));
         }
 
-        self.primary()
+        self.call()
+    }
+
+    // call           → primary ( "(" arguments? ")" )* ;
+    fn call(&mut self) -> Result<Expr, ParserError> {
+        let mut expr = self.primary()?;
+
+        loop {
+            if self.matches(&[Token::LParen]) {
+                expr = self.finish_call(expr)?;
+            } else {
+                break;
+            }
+        }
+
+        Ok(expr)
+    }
+
+    fn finish_call(&mut self, callee: Expr) -> Result<Expr, ParserError> {
+        let mut args = vec![];
+
+        let (curr, index) = self.current().unwrap();
+        let index = index.clone();
+
+        if *curr != Token::RParen {
+            let expr = self.expression()?;
+            args.push(Box::new(expr));
+
+            while self.matches(&[Token::Comma]) {
+                let expr = self.expression()?;
+                if args.len() >= 255 {
+                    return Err(ParserError::MaximumArgsExceeded(expr.token_index()));
+                }
+                args.push(Box::new(expr));
+            }
+        }
+
+        if let Some((_, index)) = self.consume(Token::RParen) {
+            return Ok(Expr::Call(Box::new(callee), args, index.clone()));
+        }
+
+        Err(ParserError::ExpectedRParenAfter(
+            "function".to_string(),
+            index,
+        ))
+    }
+
+    // arguments      → expression ( "," expression )* ;
+    fn arguments(&mut self) -> Result<Expr, ParserError> {
+        todo!();
     }
 
     // primary        → NUMBER | STRING | "true" | "false" | "nil"
@@ -884,6 +995,7 @@ pub fn print_expr(expr: &Expr, indent_level: usize) {
             Value::String(s) => println!("{indent}Literal (String) = {s}"),
             Value::Number(n) => println!("{indent}Literal (Number) = {n}"),
             Value::Bool(b) => println!("{indent}Literal (Bool) = {b}"),
+            Value::Func(fun) => println!("{indent}Literal (Func) = {fun}"),
             Value::Nil => println!("{indent}Literal (Nil)"),
         },
         Expr::Variable(name, _) => println!("{indent}var {name}"),
@@ -892,6 +1004,14 @@ pub fn print_expr(expr: &Expr, indent_level: usize) {
             println!("{indent}Logical (Operator {:?})", op);
             print_expr(lhs, indent_level + 1);
             print_expr(rhs, indent_level + 1);
+        }
+        Expr::Call(callee, args, _) => {
+            println!("{indent}Call Func");
+            print_expr(callee, indent_level + 1);
+
+            for arg in args {
+                print_expr(arg, indent_level + 2);
+            }
         }
     }
 }

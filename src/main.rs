@@ -9,6 +9,7 @@ use interpreter::{Interpreter, RuntimeError};
 use lexer::{LexerError, lexer};
 use parser::{ParserError, Value, print_stmt};
 
+mod builtins;
 mod errormsg;
 mod interpreter;
 mod lexer;

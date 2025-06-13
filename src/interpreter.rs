@@ -1,11 +1,15 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use crate::parser::{BinaryOp, Expr, LogicalOp, Stmt, UnaryOp, Value};
+use crate::{
+    builtins::time,
+    parser::{BinaryOp, Expr, Fn, LogicalOp, NativeFn, Stmt, UnaryOp, Value},
+};
 
 #[derive(Debug, Default)]
 pub struct Env {
     parent: Option<Rc<RefCell<Env>>>,
     vars: HashMap<String, Value>,
+    is_builtin_env: bool,
 }
 
 impl Env {
@@ -30,6 +34,10 @@ impl Env {
         value: Value,
         index: &usize,
     ) -> Result<(), RuntimeError> {
+        if self.is_builtin_env {
+            return Err(RuntimeError::CantModifyBuiltins(index.clone()));
+        }
+
         // if the var exists in our scope
         if let Some(_) = self.vars.get(name) {
             self.vars.insert(name.clone(), value);
@@ -52,11 +60,6 @@ impl Env {
     }
 }
 
-#[derive(Debug, Default)]
-pub struct Interpreter {
-    env: Rc<RefCell<Env>>,
-}
-
 #[derive(Debug)]
 pub enum RuntimeError {
     ControlFlow(ControlFlow, usize),
@@ -65,12 +68,34 @@ pub enum RuntimeError {
     UnaryOpTypeError(Value, UnaryOp, usize),
     DivByZero(usize),
     UnknownVariable(String, usize),
+    NotCallable(usize),
+    FnInvalidNumberOfArguments(usize, usize, usize),
+    CantModifyBuiltins(usize),
 }
 
 #[derive(Debug)]
 pub enum ControlFlow {
     Break,
     Continue,
+}
+
+#[derive(Debug)]
+pub struct Interpreter {
+    env: Rc<RefCell<Env>>,
+}
+
+impl Default for Interpreter {
+    fn default() -> Self {
+        let mut builtins = Env::default();
+        builtins.is_builtin_env = true;
+
+        // define language builtins
+        builtins.define(&String::from("time"), NativeFn::ZeroArity(time).as_value());
+
+        Self {
+            env: Env::create_child(Rc::new(RefCell::new(builtins))),
+        }
+    }
 }
 
 impl Interpreter {
@@ -325,6 +350,30 @@ impl Interpreter {
                     Ok(Value::Bool(true))
                 } else {
                     Ok(Value::Bool(false))
+                }
+            }
+            Expr::Call(callee, arguments, _) => {
+                let callee_val = self.evaluate_expr(callee, env.clone())?;
+
+                let mut args = vec![];
+
+                for arg in arguments.iter() {
+                    args.push(self.evaluate_expr(arg, env.clone())?);
+                }
+
+                match callee_val {
+                    Value::Func(fun) => {
+                        if fun.arity() != args.len() {
+                            return Err(RuntimeError::FnInvalidNumberOfArguments(
+                                fun.arity(),
+                                args.len(),
+                                callee.token_index(),
+                            ));
+                        }
+
+                        Ok(fun.call(self, &args)?)
+                    }
+                    _ => Err(RuntimeError::NotCallable(callee.token_index())),
                 }
             }
         }

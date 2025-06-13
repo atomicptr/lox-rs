@@ -96,6 +96,9 @@ pub fn print_parser_error(source: &String, err: &ParserError) {
         ParserError::ExpectedSemicolonAfterLoopCondition(index) => {
             ("expected ';' after loop condition".to_string(), index)
         }
+        ParserError::MaximumArgsExceeded(index) => {
+            ("can't have more than 255 arguments".to_string(), index)
+        }
     };
 
     print_error_at(source, index.clone(), message.as_str());
@@ -123,6 +126,14 @@ pub fn print_runtime_error(source: &String, err: RuntimeError) {
         RuntimeError::ControlFlow(cf, index) => {
             (format!("illegal control flow statement '{:?}'", cf), index)
         }
+        RuntimeError::NotCallable(index) => ("expression is not callable".to_string(), index),
+        RuntimeError::FnInvalidNumberOfArguments(expected, got, index) => (
+            format!(
+                "invalid number of arguments passed to function, expected {expected} parameters but received {got} parameters instead"
+            ),
+            index,
+        ),
+        RuntimeError::CantModifyBuiltins(index) => ("can't modify builtins".to_string(), index),
     };
 
     print_error_at(source, index, message.as_str());

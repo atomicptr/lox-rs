@@ -286,7 +286,7 @@ pub fn lexer(source: &str) -> Result<Vec<(Token, usize)>, LexerError> {
             }
 
             // identifier matching
-            c if c.is_alphanumeric() => {
+            c if c.is_alphanumeric() || *c == '_' => {
                 let mut ident = vec![c.clone()];
 
                 let start = current;
