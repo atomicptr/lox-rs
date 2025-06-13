@@ -2,7 +2,7 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::{
     builtins::{lox_assert, lox_panic, lox_time, lox_tostring},
-    parser::{BinaryOp, Expr, Fn, LogicalOp, NativeFn, Stmt, UnaryOp, Value},
+    parser::{BinaryOp, Expr, Fn, LogicalOp, Stmt, UnaryOp, Value},
 };
 
 #[derive(Debug, Default)]
@@ -96,19 +96,19 @@ impl Default for Interpreter {
         // define language builtins
         builtins.define(
             &String::from("time"),
-            NativeFn::ZeroArity(lox_time).as_value(),
+            Value::Func(Fn::NativeFunc(lox_time, 0)),
         );
         builtins.define(
             &String::from("tostring"),
-            NativeFn::OneArity(lox_tostring).as_value(),
+            Value::Func(Fn::NativeFunc(lox_tostring, 1)),
         );
         builtins.define(
             &String::from("panic"),
-            NativeFn::OneArity(lox_panic).as_value(),
+            Value::Func(Fn::NativeFunc(lox_panic, 1)),
         );
         builtins.define(
             &String::from("assert"),
-            NativeFn::TwoArity(lox_assert).as_value(),
+            Value::Func(Fn::NativeFunc(lox_assert, 2)),
         );
 
         Self {
@@ -444,15 +444,7 @@ impl Interpreter {
                     Err(err) => Err(err),
                 }
             }
-            Fn::NativeFunc(fun) => match fun {
-                NativeFn::ZeroArity(fun) => fun(index),
-                NativeFn::OneArity(fun) => fun(index, args.first().unwrap().clone()),
-                NativeFn::TwoArity(fun) => fun(
-                    index,
-                    args.get(0).unwrap().clone(),
-                    args.get(1).unwrap().clone(),
-                ),
-            },
+            Fn::NativeFunc(fun, _) => fun(index, args),
         };
 
         match res {

@@ -5,7 +5,7 @@ use crate::{
     parser::Value,
 };
 
-pub fn lox_time(_index: usize) -> Result<Value, RuntimeError> {
+pub fn lox_time(_index: usize, _args: &Vec<Value>) -> Result<Value, RuntimeError> {
     Ok(Value::Number(
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -14,7 +14,9 @@ pub fn lox_time(_index: usize) -> Result<Value, RuntimeError> {
     ))
 }
 
-pub fn lox_tostring(index: usize, value: Value) -> Result<Value, RuntimeError> {
+pub fn lox_tostring(index: usize, args: &Vec<Value>) -> Result<Value, RuntimeError> {
+    let value = args.first().unwrap().clone();
+
     match value {
         Value::String(s) => Ok(Value::String(s)),
         Value::Number(n) => Ok(Value::String(format!("{n}"))),
@@ -28,7 +30,10 @@ pub fn lox_tostring(index: usize, value: Value) -> Result<Value, RuntimeError> {
     }
 }
 
-pub fn lox_assert(index: usize, condition: Value, message: Value) -> Result<Value, RuntimeError> {
+pub fn lox_assert(index: usize, args: &Vec<Value>) -> Result<Value, RuntimeError> {
+    let condition = args.get(0).unwrap().clone();
+    let message = args.get(1).unwrap().clone();
+
     if is_truthy(&condition) {
         return Ok(Value::Nil);
     }
@@ -36,6 +41,7 @@ pub fn lox_assert(index: usize, condition: Value, message: Value) -> Result<Valu
     Err(RuntimeError::AssertionFailed(message, index))
 }
 
-pub fn lox_panic(index: usize, message: Value) -> Result<Value, RuntimeError> {
+pub fn lox_panic(index: usize, args: &Vec<Value>) -> Result<Value, RuntimeError> {
+    let message = args.get(0).unwrap().clone();
     Err(RuntimeError::Panic(message, index))
 }

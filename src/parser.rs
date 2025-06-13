@@ -1,7 +1,7 @@
 use std::{cell::RefCell, fmt::Display, rc::Rc};
 
 use crate::{
-    interpreter::{Env, Interpreter, RuntimeError},
+    interpreter::{Env, RuntimeError},
     lexer::Token,
 };
 
@@ -39,18 +39,14 @@ impl From<String> for Value {
 #[derive(Debug, Clone)]
 pub enum Fn {
     LoxFunc(String, Vec<String>, Vec<Stmt>, Rc<RefCell<Env>>),
-    NativeFunc(NativeFn),
+    NativeFunc(fn(usize, &Vec<Value>) -> Result<Value, RuntimeError>, usize),
 }
 
 impl Fn {
     pub fn arity(&self) -> usize {
         match self {
             Fn::LoxFunc(_, params, _, _) => params.len(),
-            Fn::NativeFunc(fun) => match fun {
-                NativeFn::ZeroArity(_) => 0,
-                NativeFn::OneArity(_) => 1,
-                NativeFn::TwoArity(_) => 2,
-            },
+            Fn::NativeFunc(_, arity) => arity.clone(),
         }
     }
 }
@@ -61,25 +57,12 @@ impl Display for Fn {
             Fn::LoxFunc(name, params, _, _) => {
                 format!("<fun {name}/{}({})>", self.arity(), params.join(", "))
             }
-            Fn::NativeFunc(_) => format!("<native fun/{}(...)>", self.arity()),
+            Fn::NativeFunc(_, _) => format!("<native fun/{}(...)>", self.arity()),
         };
 
         write!(f, "{res}")?;
 
         Ok(())
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum NativeFn {
-    ZeroArity(fn(usize) -> Result<Value, RuntimeError>),
-    OneArity(fn(usize, Value) -> Result<Value, RuntimeError>),
-    TwoArity(fn(usize, Value, Value) -> Result<Value, RuntimeError>),
-}
-
-impl NativeFn {
-    pub fn as_value(self) -> Value {
-        Value::Func(Fn::NativeFunc(self))
     }
 }
 
