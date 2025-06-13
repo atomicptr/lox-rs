@@ -238,6 +238,7 @@ pub enum Stmt {
     While(Box<Expr>, Box<Stmt>, Option<Box<Stmt>>),
     Break(usize),
     Continue(usize),
+    Return(Option<Box<Expr>>, usize),
 }
 
 pub fn parse(tokens: Vec<(Token, usize)>) -> Result<Vec<Stmt>, Vec<ParserError>> {
@@ -280,11 +281,12 @@ funDecl        → "fun" function ;
 function       → IDENTIFIER "(" parameters? ")" block ;
 parameters     → IDENTIFIER ( "," IDENTIFIER )* ;
 varDecl        → "var" IDENTIFIER ( "=" expression )? ";" ;
-statement      → exprStmt | "break" | "continue" | forStmt | ifStmt | printStmt | whileStmt | block ;
+statement      → exprStmt | "break" | "continue" | forStmt | ifStmt | printStmt | returnStmt | whileStmt | block ;
 exprStmt       → expression ";" ;
 forStmt        → "for" "(" ( varDecl | exprStmt | ";" ) expression? ";" expression? ")" statement ;
 ifStmt         → "if" "(" expression ")" statement ( "else" statement )? ;
 printStmt      → "print" expression ";" ;
+returnStmt     → "return" expression? ";" ;
 whileStmt      → "while" "(" expression ")" statement ;
 block          → "{" declaration* "}" ;
 expression     → assignment ;
@@ -466,6 +468,8 @@ impl Parser {
             self.if_stmt()
         } else if self.matches(&[Token::Print]) {
             self.print_stmt()
+        } else if self.matches(&[Token::Return]) {
+            self.return_stmt()
         } else if self.matches(&[Token::While]) {
             self.while_stmt()
         } else if self.matches(&[Token::LBrace]) {
@@ -620,6 +624,26 @@ impl Parser {
         } else {
             Err(ParserError::ExpectedSemicolonAfterStmt(expr.token_index()))
         }
+    }
+
+    // returnStmt     → "return" expression? ";" ;
+    fn return_stmt(&mut self) -> Result<Stmt, ParserError> {
+        let (_, return_index) = self.previous().unwrap();
+        let return_index = return_index.clone();
+
+        let (curr, _) = self.current().unwrap();
+
+        let expr = if *curr != Token::Semicolon {
+            Some(Box::new(self.expression()?))
+        } else {
+            None
+        };
+
+        if self.consume_isnt(Token::Semicolon) {
+            return Err(ParserError::ExpectedSemicolonAfterStmt(return_index));
+        }
+
+        Ok(Stmt::Return(expr, return_index))
     }
 
     // whileStmt      → "while" "(" expression ")" statement ;
@@ -1043,6 +1067,13 @@ pub fn print_stmt(stmt: &Stmt, indent_level: usize) {
 
             for stmt in body {
                 print_stmt(stmt, indent_level + 1);
+            }
+        }
+        Stmt::Return(expr, _) => {
+            println!("{indent}Return");
+
+            if let Some(expr) = expr {
+                print_expr(expr, indent_level + 1);
             }
         }
     };

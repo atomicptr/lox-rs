@@ -80,6 +80,7 @@ pub enum RuntimeError {
 pub enum ControlFlow {
     Break,
     Continue,
+    Return(Option<Value>),
 }
 
 #[derive(Debug)]
@@ -194,6 +195,18 @@ impl Interpreter {
                     Value::Func(Fn::LoxFunc(name.clone(), params.clone(), body.clone())),
                 );
                 Ok(Value::Nil)
+            }
+            Stmt::Return(expr, index) => {
+                let value = if let Some(expr) = expr {
+                    Some(self.evaluate_expr(expr, env)?)
+                } else {
+                    None
+                };
+
+                Err(RuntimeError::ControlFlow(
+                    ControlFlow::Return(value),
+                    index.clone(),
+                ))
             }
         }
     }
@@ -411,7 +424,7 @@ impl Interpreter {
         env: Rc<RefCell<Env>>,
         index: usize,
     ) -> Result<Value, RuntimeError> {
-        match fun {
+        let res = match fun {
             Fn::LoxFunc(name, params, block) => {
                 let env = Env::create_child(env);
 
@@ -422,9 +435,10 @@ impl Interpreter {
                     env.borrow_mut().define(param, args.get(i).unwrap().clone());
                 }
 
-                self.evaluate_block(&block, env)?;
-
-                Ok(Value::Nil)
+                match self.evaluate_block(&block, env) {
+                    Ok(_) => Ok(Value::Nil),
+                    Err(err) => Err(err),
+                }
             }
             Fn::NativeFunc(fun) => match fun {
                 NativeFn::ZeroArity(fun) => fun(index),
@@ -435,6 +449,14 @@ impl Interpreter {
                     args.get(1).unwrap().clone(),
                 ),
             },
+        };
+
+        match res {
+            // intercept return errors and use that as return value
+            Err(RuntimeError::ControlFlow(ControlFlow::Return(value), _)) => {
+                Ok(value.unwrap_or(Value::Nil))
+            }
+            res => res,
         }
     }
 
