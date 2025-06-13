@@ -1,8 +1,8 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::{
-    builtins::time,
-    parser::{BinaryOp, Expr, Fn, LogicalOp, NativeFn, Stmt, UnaryOp, Value},
+    builtins::{time, to_string},
+    parser::{BinaryOp, Expr, LogicalOp, NativeFn, Stmt, UnaryOp, Value},
 };
 
 #[derive(Debug, Default)]
@@ -71,6 +71,7 @@ pub enum RuntimeError {
     NotCallable(usize),
     FnInvalidNumberOfArguments(usize, usize, usize),
     CantModifyBuiltins(usize),
+    CantConvertValue(Value, String, usize),
 }
 
 #[derive(Debug)]
@@ -91,6 +92,10 @@ impl Default for Interpreter {
 
         // define language builtins
         builtins.define(&String::from("time"), NativeFn::ZeroArity(time).as_value());
+        builtins.define(
+            &String::from("to_string"),
+            NativeFn::OneArity(to_string).as_value(),
+        );
 
         Self {
             env: Env::create_child(Rc::new(RefCell::new(builtins))),
@@ -371,7 +376,7 @@ impl Interpreter {
                             ));
                         }
 
-                        Ok(fun.call(self, &args)?)
+                        Ok(fun.call(self, &args, callee.token_index())?)
                     }
                     _ => Err(RuntimeError::NotCallable(callee.token_index())),
                 }

@@ -42,6 +42,7 @@ impl Fn {
             Fn::LoxFunc => 0,
             Fn::NativeFunc(fun) => match fun {
                 NativeFn::ZeroArity(_) => 0,
+                NativeFn::OneArity(_) => 1,
             },
         }
     }
@@ -50,11 +51,13 @@ impl Fn {
         &self,
         interpreter: &mut Interpreter,
         args: &Vec<Value>,
+        index: usize,
     ) -> Result<Value, RuntimeError> {
         match self {
             Fn::LoxFunc => todo!(),
             Fn::NativeFunc(fun) => match fun {
-                NativeFn::ZeroArity(fun) => Ok(fun()),
+                NativeFn::ZeroArity(fun) => fun(index),
+                NativeFn::OneArity(fun) => fun(index, args.first().unwrap().clone()),
             },
         }
     }
@@ -75,7 +78,8 @@ impl Display for Fn {
 
 #[derive(Debug, Clone)]
 pub enum NativeFn {
-    ZeroArity(fn() -> Value),
+    ZeroArity(fn(usize) -> Result<Value, RuntimeError>),
+    OneArity(fn(usize, Value) -> Result<Value, RuntimeError>),
 }
 
 impl NativeFn {

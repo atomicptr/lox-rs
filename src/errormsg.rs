@@ -134,6 +134,9 @@ pub fn print_runtime_error(source: &String, err: RuntimeError) {
             index,
         ),
         RuntimeError::CantModifyBuiltins(index) => ("can't modify builtins".to_string(), index),
+        RuntimeError::CantConvertValue(value, to, index) => {
+            (format!("can't convert {:?} to {to}", value), index)
+        }
     };
 
     print_error_at(source, index, message.as_str());
