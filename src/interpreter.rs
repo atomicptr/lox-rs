@@ -105,6 +105,19 @@ impl Interpreter {
 
                 Ok(Value::Nil)
             }
+            Stmt::While(condition, body) => {
+                loop {
+                    let env = env.clone();
+                    let value = self.evaluate_expr(condition, env.clone())?;
+
+                    if !is_truthy(&value) {
+                        break;
+                    }
+
+                    self.evaluate_stmt(body, env)?;
+                }
+                Ok(Value::Nil)
+            }
         }
     }
 

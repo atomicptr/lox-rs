@@ -174,6 +174,7 @@ pub enum Stmt {
     Var(String, Box<Expr>),
     Block(Vec<Stmt>),
     If(Box<Expr>, Box<Stmt>, Option<Box<Stmt>>),
+    While(Box<Expr>, Box<Stmt>),
 }
 
 pub fn parse(tokens: Vec<(Token, usize)>) -> Result<Vec<Stmt>, Vec<ParserError>> {
@@ -196,8 +197,8 @@ pub enum ParserError {
     ExpectedSemicolonAfterExpr(usize),
     InvalidAssignmentTarget(usize),
     ExpectedRBraceAfterBlock(usize),
-    ExpectedLParenAfterIf(usize),
-    ExpectedRParenAfterIf(usize),
+    ExpectedLParenAfter(String, usize),
+    ExpectedRParenAfter(String, usize),
 }
 
 /*
@@ -208,10 +209,11 @@ Expression Grammar:
 program        → declaration* EOF ;
 declaration    → varDecl | statement;
 varDecl        → "var" IDENTIFIER ( "=" expression )? ";" ;
-statement      → exprStmt | ifStmt | printStmt | block ;
+statement      → exprStmt | ifStmt | printStmt | whileStmt | block ;
 exprStmt       → expression ";" ;
 ifStmt         → "if" "(" expression ")" statement ( "else" statement )? ;
 printStmt      → "print" expression ";" ;
+whileStmt      → "while" "(" expression ")" statement ;
 block          → "{" declaration* "}" ;
 expression     → assignment ;
 assignment     → IDENTIFIER "=" assignment | logic_or;
@@ -297,12 +299,14 @@ impl Parser {
         Err(ParserError::UnexpectedToken(token.clone(), index.clone()))
     }
 
-    // statement      → exprStmt | printStmt | block ;
+    // statement      → exprStmt | ifStmt | printStmt | whileStmt | block ;
     fn statement(&mut self) -> Result<Stmt, ParserError> {
         if self.matches(&[Token::If]) {
             self.if_stmt()
         } else if self.matches(&[Token::Print]) {
             self.print_stmt()
+        } else if self.matches(&[Token::While]) {
+            self.while_stmt()
         } else if self.matches(&[Token::LBrace]) {
             let stmts = self.block()?;
             Ok(Stmt::Block(stmts))
@@ -364,11 +368,17 @@ impl Parser {
                 ));
             }
 
-            return Err(ParserError::ExpectedRParenAfterIf(condition.token_index()));
+            return Err(ParserError::ExpectedRParenAfter(
+                "if condition".to_string(),
+                condition.token_index(),
+            ));
         }
 
         let (_, index) = self.previous().unwrap();
-        Err(ParserError::ExpectedLParenAfterIf(index.clone()))
+        Err(ParserError::ExpectedLParenAfter(
+            "if".to_string(),
+            index.clone(),
+        ))
     }
 
     // printStmt      → "print" expression ";" ;
@@ -380,6 +390,30 @@ impl Parser {
         } else {
             Err(ParserError::ExpectedSemicolonAfterStmt(expr.token_index()))
         }
+    }
+
+    // whileStmt      → "while" "(" expression ")" statement ;
+    fn while_stmt(&mut self) -> Result<Stmt, ParserError> {
+        if let Some(_) = self.consume(Token::LParen) {
+            let condition = self.expression()?;
+
+            if let Some(_) = self.consume(Token::RParen) {
+                let body = self.statement()?;
+
+                return Ok(Stmt::While(Box::new(condition), Box::new(body)));
+            }
+
+            return Err(ParserError::ExpectedRParenAfter(
+                "while condition".to_string(),
+                condition.token_index(),
+            ));
+        }
+
+        let (_, index) = self.previous().unwrap();
+        Err(ParserError::ExpectedLParenAfter(
+            "while".to_string(),
+            index.clone(),
+        ))
     }
 
     // expression     → assignment ;
@@ -698,6 +732,12 @@ pub fn print_stmt(stmt: &Stmt, indent_level: usize) {
             if let Some(else_branch) = else_branch {
                 print_stmt(else_branch, indent_level + 1);
             }
+        }
+        Stmt::While(condition, body) => {
+            println!("{indent}While:");
+
+            print_expr(condition, indent_level + 1);
+            print_stmt(body, indent_level + 1);
         }
     };
 }

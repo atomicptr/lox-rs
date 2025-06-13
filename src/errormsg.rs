@@ -87,9 +87,11 @@ pub fn print_parser_error(source: &String, err: &ParserError) {
         ParserError::ExpectedRBraceAfterBlock(index) => {
             ("expected '}' after block".to_string(), index)
         }
-        ParserError::ExpectedLParenAfterIf(index) => ("expected '(' after 'if'".to_string(), index),
-        ParserError::ExpectedRParenAfterIf(index) => {
-            ("expected ')' after the 'if' condition".to_string(), index)
+        ParserError::ExpectedLParenAfter(what, index) => {
+            (format!("expected '(' after '{what}'"), index)
+        }
+        ParserError::ExpectedRParenAfter(what, index) => {
+            ("expected ')' after '{what}'".to_string(), index)
         }
     };
 
