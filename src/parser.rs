@@ -188,6 +188,7 @@ pub fn parse(tokens: Vec<(Token, usize)>) -> Result<Vec<Stmt>, Vec<ParserError>>
 pub struct Parser {
     tokens: Vec<(Token, usize)>,
     index: usize,
+    inside_loop: bool,
 }
 
 #[derive(Debug)]
@@ -236,7 +237,11 @@ primary        → NUMBER | STRING | "true" | "false" | "nil"
 
 impl Parser {
     fn from(tokens: Vec<(Token, usize)>) -> Self {
-        Self { tokens, index: 0 }
+        Self {
+            tokens,
+            index: 0,
+            inside_loop: false,
+        }
     }
 
     // program        → declaration* EOF ;
@@ -305,17 +310,18 @@ impl Parser {
 
     // statement      → exprStmt | forStmt | ifStmt | printStmt | whileStmt | block ;
     fn statement(&mut self) -> Result<Stmt, ParserError> {
-        if let Some((_, index)) = self.consume(Token::Break) {
-            let index = index.clone();
-            if self.consume_is(Token::Semicolon) {
-                Ok(Stmt::Break(index))
-            } else {
-                Err(ParserError::ExpectedSemicolonAfterStmt(index))
-            }
-        } else if let Some((_, index)) = self.consume(Token::Continue) {
-            let index = index.clone();
-            if self.consume_is(Token::Semicolon) {
-                Ok(Stmt::Continue(index))
+        if self.matches(&[Token::Break, Token::Continue]) {
+            let (token, index) = self.previous().unwrap();
+            let (token, index) = (token.clone(), index.clone());
+
+            if !self.inside_loop {
+                Err(ParserError::UnexpectedToken(token, index))
+            } else if self.consume_is(Token::Semicolon) {
+                match token {
+                    Token::Break => Ok(Stmt::Break(index)),
+                    Token::Continue => Ok(Stmt::Continue(index)),
+                    _ => unreachable!(),
+                }
             } else {
                 Err(ParserError::ExpectedSemicolonAfterStmt(index))
             }
@@ -415,7 +421,9 @@ impl Parser {
             ));
         }
 
+        self.inside_loop = true;
         let body = self.statement()?;
+        self.inside_loop = false;
 
         // transform for loop into while loop
 
@@ -485,7 +493,9 @@ impl Parser {
             let condition = self.expression()?;
 
             if let Some(_) = self.consume(Token::RParen) {
+                self.inside_loop = true;
                 let body = self.statement()?;
+                self.inside_loop = false;
 
                 return Ok(Stmt::While(Box::new(condition), Box::new(body), None));
             }
@@ -709,6 +719,8 @@ impl Parser {
 
     fn sync(&mut self) {
         self.advance();
+
+        self.inside_loop = false;
 
         while !self.is_at_end() {
             if let Some((Token::Semicolon, _)) = self.previous() {
