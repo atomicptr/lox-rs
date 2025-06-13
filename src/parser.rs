@@ -81,6 +81,37 @@ impl TryFrom<Token> for BinaryOp {
 }
 
 #[derive(Debug, Clone)]
+pub enum LogicalOp {
+    Or,
+    And,
+}
+
+impl Display for LogicalOp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let res = match self {
+            LogicalOp::Or => "or",
+            LogicalOp::And => "and",
+        };
+
+        write!(f, "{res}")?;
+
+        Ok(())
+    }
+}
+
+impl TryFrom<Token> for LogicalOp {
+    type Error = ();
+
+    fn try_from(value: Token) -> Result<Self, Self::Error> {
+        match value {
+            Token::Or => Ok(LogicalOp::Or),
+            Token::And => Ok(LogicalOp::And),
+            _ => Err(()),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum UnaryOp {
     Not,
     Neg,
@@ -116,6 +147,7 @@ pub enum Expr {
     Binary(Box<Expr>, BinaryOp, Box<Expr>, usize),
     Grouping(Box<Expr>, (usize, usize)),
     Literal(Value, usize),
+    Logical(Box<Expr>, LogicalOp, Box<Expr>, usize),
     Unary(UnaryOp, Box<Expr>, usize),
     Variable(String, usize),
     Assignment(String, Box<Expr>, usize),
@@ -130,6 +162,7 @@ impl Expr {
             Expr::Unary(_, _, index) => index.clone(),
             Expr::Variable(_, index) => index.clone(),
             Expr::Assignment(_, _, index) => index.clone(),
+            Expr::Logical(_, _, _, index) => index.clone(),
         }
     }
 }
@@ -181,7 +214,9 @@ ifStmt         → "if" "(" expression ")" statement ( "else" statement )? ;
 printStmt      → "print" expression ";" ;
 block          → "{" declaration* "}" ;
 expression     → assignment ;
-assignment     → IDENTIFIER "=" assignment | equality;
+assignment     → IDENTIFIER "=" assignment | logic_or;
+logic_or       → logic_and ( "or" logic_and )* ;
+logic_and      → equality ( "and" equality )* ;
 equality       → comparison ( ( "!=" | "==" ) comparison )* ;
 comparison     → term ( ( ">" | ">=" | "<" | "<=" ) term )* ;
 term           → factor ( ( "-" | "+" ) factor )* ;
@@ -352,8 +387,9 @@ impl Parser {
         self.assignment()
     }
 
+    // assignment     → IDENTIFIER "=" assignment | logic_or;
     fn assignment(&mut self) -> Result<Expr, ParserError> {
-        let expr = self.equality()?;
+        let expr = self.logic_or()?;
 
         if self.matches(&[Token::Equal]) {
             let (_, eq_index) = self.previous().unwrap();
@@ -366,6 +402,42 @@ impl Parser {
             }
 
             return Err(ParserError::InvalidAssignmentTarget(index));
+        }
+
+        Ok(expr)
+    }
+
+    // logic_or       → logic_and ( "or" logic_and )* ;
+    fn logic_or(&mut self) -> Result<Expr, ParserError> {
+        let mut expr = self.logic_and()?;
+
+        while self.matches(&[Token::Or]) {
+            let (operator, op_index) = self
+                .previous()
+                .map(|(t, i)| (t.clone().try_into().unwrap(), i.clone()))
+                .unwrap();
+
+            let rhs = self.logic_and()?;
+
+            expr = Expr::Logical(Box::new(expr), operator, Box::new(rhs), op_index);
+        }
+
+        Ok(expr)
+    }
+
+    // logic_and      → equality ( "and" equality )* ;
+    fn logic_and(&mut self) -> Result<Expr, ParserError> {
+        let mut expr = self.equality()?;
+
+        while self.matches(&[Token::And]) {
+            let (operator, op_index) = self
+                .previous()
+                .map(|(t, i)| (t.clone().try_into().unwrap(), i.clone()))
+                .unwrap();
+
+            let rhs = self.logic_and()?;
+
+            expr = Expr::Logical(Box::new(expr), operator, Box::new(rhs), op_index);
         }
 
         Ok(expr)
@@ -655,6 +727,11 @@ pub fn print_expr(expr: &Expr, indent_level: usize) {
         },
         Expr::Variable(name, _) => println!("{indent}var {name}"),
         Expr::Assignment(name, expr, _) => println!("{indent}assign var {name} = {:?}", expr),
+        Expr::Logical(lhs, op, rhs, _) => {
+            println!("{indent}Logical (Operator {:?})", op);
+            print_expr(lhs, indent_level + 1);
+            print_expr(rhs, indent_level + 1);
+        }
     }
 }
 

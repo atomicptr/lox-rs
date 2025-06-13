@@ -1,6 +1,6 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use crate::parser::{BinaryOp, Expr, Stmt, UnaryOp, Value};
+use crate::parser::{BinaryOp, Expr, LogicalOp, Stmt, UnaryOp, Value};
 
 #[derive(Debug, Default)]
 pub struct Env {
@@ -263,6 +263,28 @@ impl Interpreter {
                         Ok(value)
                     }
                     None => Err(RuntimeError::UnknownVariable(name.clone(), index.clone())),
+                }
+            }
+            Expr::Logical(lhs, op, rhs, _) => {
+                let lhs = self.evaluate_expr(lhs, env.clone())?;
+
+                match op {
+                    LogicalOp::Or => {
+                        if is_truthy(&lhs) {
+                            return Ok(Value::Bool(true));
+                        }
+                    }
+                    LogicalOp::And => {
+                        if !is_truthy(&lhs) {
+                            return Ok(Value::Bool(false));
+                        }
+                    }
+                }
+
+                if is_truthy(&self.evaluate_expr(rhs, env)?) {
+                    Ok(Value::Bool(true))
+                } else {
+                    Ok(Value::Bool(false))
                 }
             }
         }
