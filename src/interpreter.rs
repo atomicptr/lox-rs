@@ -192,7 +192,12 @@ impl Interpreter {
             Stmt::Func(name, params, body) => {
                 env.borrow_mut().define(
                     name,
-                    Value::Func(Fn::LoxFunc(name.clone(), params.clone(), body.clone())),
+                    Value::Func(Fn::LoxFunc(
+                        name.clone(),
+                        params.clone(),
+                        body.clone(),
+                        env.clone(),
+                    )),
                 );
                 Ok(Value::Nil)
             }
@@ -409,7 +414,7 @@ impl Interpreter {
                             ));
                         }
 
-                        self.call_func(fun, &args, env.clone(), callee.token_index())
+                        self.call_func(fun, &args, callee.token_index())
                     }
                     _ => Err(RuntimeError::NotCallable(callee.token_index())),
                 }
@@ -421,11 +426,10 @@ impl Interpreter {
         &mut self,
         fun: Fn,
         args: &Vec<Value>,
-        env: Rc<RefCell<Env>>,
         index: usize,
     ) -> Result<Value, RuntimeError> {
         let res = match fun {
-            Fn::LoxFunc(name, params, block) => {
+            Fn::LoxFunc(name, params, block, env) => {
                 let env = Env::create_child(env);
 
                 env.borrow_mut()

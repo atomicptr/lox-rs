@@ -38,14 +38,14 @@ impl From<String> for Value {
 
 #[derive(Debug, Clone)]
 pub enum Fn {
-    LoxFunc(String, Vec<String>, Vec<Stmt>),
+    LoxFunc(String, Vec<String>, Vec<Stmt>, Rc<RefCell<Env>>),
     NativeFunc(NativeFn),
 }
 
 impl Fn {
     pub fn arity(&self) -> usize {
         match self {
-            Fn::LoxFunc(_, params, _) => params.len(),
+            Fn::LoxFunc(_, params, _, _) => params.len(),
             Fn::NativeFunc(fun) => match fun {
                 NativeFn::ZeroArity(_) => 0,
                 NativeFn::OneArity(_) => 1,
@@ -58,7 +58,7 @@ impl Fn {
 impl Display for Fn {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let res = match self {
-            Fn::LoxFunc(name, params, _) => {
+            Fn::LoxFunc(name, params, _, _) => {
                 format!("<fun {name}/{}({})>", self.arity(), params.join(", "))
             }
             Fn::NativeFunc(_) => format!("<native fun/{}(...)>", self.arity()),
