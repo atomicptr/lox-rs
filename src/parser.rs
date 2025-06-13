@@ -188,7 +188,7 @@ pub fn parse(tokens: Vec<(Token, usize)>) -> Result<Vec<Stmt>, Vec<ParserError>>
 pub struct Parser {
     tokens: Vec<(Token, usize)>,
     index: usize,
-    inside_loop: bool,
+    loop_depth: Vec<()>,
 }
 
 #[derive(Debug)]
@@ -240,7 +240,7 @@ impl Parser {
         Self {
             tokens,
             index: 0,
-            inside_loop: false,
+            loop_depth: Vec::default(),
         }
     }
 
@@ -314,7 +314,7 @@ impl Parser {
             let (token, index) = self.previous().unwrap();
             let (token, index) = (token.clone(), index.clone());
 
-            if !self.inside_loop {
+            if !self.inside_loop() {
                 Err(ParserError::UnexpectedToken(token, index))
             } else if self.consume_is(Token::Semicolon) {
                 match token {
@@ -421,9 +421,9 @@ impl Parser {
             ));
         }
 
-        self.inside_loop = true;
+        self.loop_depth.push(());
         let body = self.statement()?;
-        self.inside_loop = false;
+        self.loop_depth.pop().unwrap();
 
         // transform for loop into while loop
 
@@ -493,9 +493,9 @@ impl Parser {
             let condition = self.expression()?;
 
             if let Some(_) = self.consume(Token::RParen) {
-                self.inside_loop = true;
+                self.loop_depth.push(());
                 let body = self.statement()?;
-                self.inside_loop = false;
+                self.loop_depth.pop().unwrap();
 
                 return Ok(Stmt::While(Box::new(condition), Box::new(body), None));
             }
@@ -719,7 +719,8 @@ impl Parser {
     fn sync(&mut self) {
         self.advance();
 
-        self.inside_loop = false;
+        // pop one if available
+        self.loop_depth.pop();
 
         while !self.is_at_end() {
             if let Some((Token::Semicolon, _)) = self.previous() {
@@ -807,6 +808,10 @@ impl Parser {
 
     fn consume_isnt(&mut self, token: Token) -> bool {
         !self.consume_is(token)
+    }
+
+    fn inside_loop(&self) -> bool {
+        !self.loop_depth.is_empty()
     }
 }
 
