@@ -1,6 +1,9 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::{interpreter::RuntimeError, parser::Value};
+use crate::{
+    interpreter::{RuntimeError, is_truthy},
+    parser::Value,
+};
 
 pub fn time(_index: usize) -> Result<Value, RuntimeError> {
     Ok(Value::Number(
@@ -23,4 +26,16 @@ pub fn to_string(index: usize, value: Value) -> Result<Value, RuntimeError> {
         )),
         Value::Nil => Ok(Value::String("nil".to_string())),
     }
+}
+
+pub fn lox_assert(index: usize, condition: Value, message: Value) -> Result<Value, RuntimeError> {
+    if is_truthy(&condition) {
+        return Ok(Value::Nil);
+    }
+
+    Err(RuntimeError::AssertionFailed(message, index))
+}
+
+pub fn lox_panic(index: usize, message: Value) -> Result<Value, RuntimeError> {
+    Err(RuntimeError::Panic(message, index))
 }

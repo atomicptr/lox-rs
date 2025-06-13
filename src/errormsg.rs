@@ -137,6 +137,10 @@ pub fn print_runtime_error(source: &String, err: RuntimeError) {
         RuntimeError::CantConvertValue(value, to, index) => {
             (format!("can't convert {:?} to {to}", value), index)
         }
+        RuntimeError::AssertionFailed(message, index) => {
+            (format!("assertion failed: {message}"), index)
+        }
+        RuntimeError::Panic(message, index) => (format!("PANIC: {message}"), index),
     };
 
     print_error_at(source, index, message.as_str());

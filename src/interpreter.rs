@@ -1,7 +1,7 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::{
-    builtins::{time, to_string},
+    builtins::{lox_assert, lox_panic, time, to_string},
     parser::{BinaryOp, Expr, LogicalOp, NativeFn, Stmt, UnaryOp, Value},
 };
 
@@ -72,6 +72,8 @@ pub enum RuntimeError {
     FnInvalidNumberOfArguments(usize, usize, usize),
     CantModifyBuiltins(usize),
     CantConvertValue(Value, String, usize),
+    AssertionFailed(Value, usize),
+    Panic(Value, usize),
 }
 
 #[derive(Debug)]
@@ -95,6 +97,14 @@ impl Default for Interpreter {
         builtins.define(
             &String::from("to_string"),
             NativeFn::OneArity(to_string).as_value(),
+        );
+        builtins.define(
+            &String::from("panic"),
+            NativeFn::OneArity(lox_panic).as_value(),
+        );
+        builtins.define(
+            &String::from("assert"),
+            NativeFn::TwoArity(lox_assert).as_value(),
         );
 
         Self {
@@ -398,7 +408,8 @@ impl Interpreter {
         Ok(())
     }
 }
-fn is_truthy(value: &Value) -> bool {
+
+pub fn is_truthy(value: &Value) -> bool {
     match value {
         Value::Nil => false,
         Value::Bool(b) => *b,

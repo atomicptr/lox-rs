@@ -43,6 +43,7 @@ impl Fn {
             Fn::NativeFunc(fun) => match fun {
                 NativeFn::ZeroArity(_) => 0,
                 NativeFn::OneArity(_) => 1,
+                NativeFn::TwoArity(_) => 2,
             },
         }
     }
@@ -58,6 +59,11 @@ impl Fn {
             Fn::NativeFunc(fun) => match fun {
                 NativeFn::ZeroArity(fun) => fun(index),
                 NativeFn::OneArity(fun) => fun(index, args.first().unwrap().clone()),
+                NativeFn::TwoArity(fun) => fun(
+                    index,
+                    args.first().unwrap().clone(),
+                    args.get(1).unwrap().clone(),
+                ),
             },
         }
     }
@@ -80,6 +86,7 @@ impl Display for Fn {
 pub enum NativeFn {
     ZeroArity(fn(usize) -> Result<Value, RuntimeError>),
     OneArity(fn(usize, Value) -> Result<Value, RuntimeError>),
+    TwoArity(fn(usize, Value, Value) -> Result<Value, RuntimeError>),
 }
 
 impl NativeFn {
