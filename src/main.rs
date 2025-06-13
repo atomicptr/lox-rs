@@ -4,7 +4,7 @@ use std::{
     process::exit,
 };
 
-use errormsg::{print_interpreter_error, print_lexer_error, print_parser_error};
+use errormsg::{print_lexer_error, print_parser_error, print_runtime_error};
 use interpreter::{Interpreter, RuntimeError};
 use lexer::{LexerError, lexer};
 use parser::{ParserError, Value, print_stmt};
@@ -46,7 +46,7 @@ fn run_prompt() {
             Err(LoxError::ParserErrors(errs)) => {
                 errs.iter().for_each(|err| print_parser_error(&s, err))
             }
-            Err(LoxError::InterpreterError(err)) => print_interpreter_error(&s, err),
+            Err(LoxError::InterpreterError(err)) => print_runtime_error(&s, err),
         }
     }
 }
@@ -62,7 +62,7 @@ fn run_file(file: &String) {
         Err(LoxError::ParserErrors(errs)) => {
             errs.iter().for_each(|err| print_parser_error(&source, err))
         }
-        Err(LoxError::InterpreterError(err)) => print_interpreter_error(&source, err),
+        Err(LoxError::InterpreterError(err)) => print_runtime_error(&source, err),
     }
 }
 

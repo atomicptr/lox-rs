@@ -91,7 +91,7 @@ pub fn print_parser_error(source: &String, err: &ParserError) {
             (format!("expected '(' after '{what}'"), index)
         }
         ParserError::ExpectedRParenAfter(what, index) => {
-            ("expected ')' after '{what}'".to_string(), index)
+            (format!("expected ')' after '{what}'"), index)
         }
         ParserError::ExpectedSemicolonAfterLoopCondition(index) => {
             ("expected ';' after loop condition".to_string(), index)
@@ -101,7 +101,7 @@ pub fn print_parser_error(source: &String, err: &ParserError) {
     print_error_at(source, index.clone(), message.as_str());
 }
 
-pub fn print_interpreter_error(source: &String, err: RuntimeError) {
+pub fn print_runtime_error(source: &String, err: RuntimeError) {
     let (message, index) = match err {
         RuntimeError::BinaryOpUnaryTypeError(value, op, index) => (
             format!("operator '{op}' can't be used with '{:?}'", value),
@@ -120,6 +120,9 @@ pub fn print_interpreter_error(source: &String, err: RuntimeError) {
         ),
         RuntimeError::DivByZero(index) => ("division by zero".to_string(), index),
         RuntimeError::UnknownVariable(name, index) => (format!("unknown variable '{name}'"), index),
+        RuntimeError::ControlFlow(cf, index) => {
+            (format!("illegal control flow statement '{:?}'", cf), index)
+        }
     };
 
     print_error_at(source, index, message.as_str());

@@ -174,7 +174,9 @@ pub enum Stmt {
     Var(String, Box<Expr>),
     Block(Vec<Stmt>),
     If(Box<Expr>, Box<Stmt>, Option<Box<Stmt>>),
-    While(Box<Expr>, Box<Stmt>),
+    While(Box<Expr>, Box<Stmt>, Option<Box<Stmt>>),
+    Break(usize),
+    Continue(usize),
 }
 
 pub fn parse(tokens: Vec<(Token, usize)>) -> Result<Vec<Stmt>, Vec<ParserError>> {
@@ -210,7 +212,7 @@ Expression Grammar:
 program        → declaration* EOF ;
 declaration    → varDecl | statement;
 varDecl        → "var" IDENTIFIER ( "=" expression )? ";" ;
-statement      → exprStmt | forStmt | ifStmt | printStmt | whileStmt | block ;
+statement      → exprStmt | "break" | "continue" | forStmt | ifStmt | printStmt | whileStmt | block ;
 exprStmt       → expression ";" ;
 forStmt        → "for" "(" ( varDecl | exprStmt | ";" ) expression? ";" expression? ")" statement ;
 ifStmt         → "if" "(" expression ")" statement ( "else" statement )? ;
@@ -303,7 +305,21 @@ impl Parser {
 
     // statement      → exprStmt | forStmt | ifStmt | printStmt | whileStmt | block ;
     fn statement(&mut self) -> Result<Stmt, ParserError> {
-        if self.matches(&[Token::For]) {
+        if let Some((_, index)) = self.consume(Token::Break) {
+            let index = index.clone();
+            if self.consume_is(Token::Semicolon) {
+                Ok(Stmt::Break(index))
+            } else {
+                Err(ParserError::ExpectedSemicolonAfterStmt(index))
+            }
+        } else if let Some((_, index)) = self.consume(Token::Continue) {
+            let index = index.clone();
+            if self.consume_is(Token::Semicolon) {
+                Ok(Stmt::Continue(index))
+            } else {
+                Err(ParserError::ExpectedSemicolonAfterStmt(index))
+            }
+        } else if self.matches(&[Token::For]) {
             self.for_stmt()
         } else if self.matches(&[Token::If]) {
             self.if_stmt()
@@ -403,17 +419,12 @@ impl Parser {
 
         // transform for loop into while loop
 
-        // append increment block to body
-        let body = if let Some(incr) = incr {
-            Stmt::Block(vec![body, Stmt::Expr(Box::new(incr))])
-        } else {
-            body
-        };
-
         // transform body into while loop with condition (or infinite loop if condition is empty)
         let body = Stmt::While(
             Box::new(condition.unwrap_or(Expr::Literal(Value::Bool(true), cond_index))),
             Box::new(body),
+            // put incr into the "after" special block
+            incr.map(|stmt| Box::new(Stmt::Expr(Box::new(stmt)))),
         );
 
         // prepend initializer in front of while loop
@@ -476,7 +487,7 @@ impl Parser {
             if let Some(_) = self.consume(Token::RParen) {
                 let body = self.statement()?;
 
-                return Ok(Stmt::While(Box::new(condition), Box::new(body)));
+                return Ok(Stmt::While(Box::new(condition), Box::new(body), None));
             }
 
             return Err(ParserError::ExpectedRParenAfter(
@@ -821,12 +832,18 @@ pub fn print_stmt(stmt: &Stmt, indent_level: usize) {
                 print_stmt(else_branch, indent_level + 1);
             }
         }
-        Stmt::While(condition, body) => {
+        Stmt::While(condition, body, after) => {
             println!("{indent}While:");
 
             print_expr(condition, indent_level + 1);
             print_stmt(body, indent_level + 1);
+
+            if let Some(after) = after {
+                print_stmt(after, indent_level + 1);
+            }
         }
+        Stmt::Break(_) => println!("{indent}BREAK"),
+        Stmt::Continue(_) => println!("{indent}CONTINUE"),
     };
 }
 

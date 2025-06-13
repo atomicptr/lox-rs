@@ -40,6 +40,8 @@ pub enum Token {
     Var,
     While,
     Eof,
+    Break,
+    Continue,
 }
 
 impl Token {
@@ -83,6 +85,8 @@ impl Token {
             (Token::Var, Token::Var) => true,
             (Token::While, Token::While) => true,
             (Token::Eof, Token::Eof) => true,
+            (Token::Break, Token::Break) => true,
+            (Token::Continue, Token::Continue) => true,
             _ => false,
         }
     }
@@ -321,6 +325,8 @@ pub fn lexer(source: &str) -> Result<Vec<(Token, usize)>, LexerError> {
                         "true" => Token::Bool(true),
                         "var" => Token::Var,
                         "while" => Token::While,
+                        "continue" => Token::Continue,
+                        "break" => Token::Break,
                         _ => Token::Identifier(ident),
                     },
                     start,

@@ -59,11 +59,18 @@ pub struct Interpreter {
 
 #[derive(Debug)]
 pub enum RuntimeError {
+    ControlFlow(ControlFlow, usize),
     BinaryOpUnaryTypeError(Value, BinaryOp, usize),
     BinaryOpTyperError(Value, BinaryOp, Value, usize),
     UnaryOpTypeError(Value, UnaryOp, usize),
     DivByZero(usize),
     UnknownVariable(String, usize),
+}
+
+#[derive(Debug)]
+pub enum ControlFlow {
+    Break,
+    Continue,
 }
 
 impl Interpreter {
@@ -105,7 +112,7 @@ impl Interpreter {
 
                 Ok(Value::Nil)
             }
-            Stmt::While(condition, body) => {
+            Stmt::While(condition, body, after) => {
                 loop {
                     let env = env.clone();
                     let value = self.evaluate_expr(condition, env.clone())?;
@@ -114,10 +121,30 @@ impl Interpreter {
                         break;
                     }
 
-                    self.evaluate_stmt(body, env)?;
+                    match self.evaluate_stmt(body, env.clone()) {
+                        Ok(_) => {}
+                        Err(RuntimeError::ControlFlow(ControlFlow::Break, _)) => break,
+                        Err(RuntimeError::ControlFlow(ControlFlow::Continue, _)) => {
+                            if let Some(after) = after {
+                                let _ = self.evaluate_stmt(after, env.clone())?;
+                            }
+
+                            continue;
+                        }
+                        Err(err) => return Err(err),
+                    }
+
+                    if let Some(after) = after {
+                        let _ = self.evaluate_stmt(after, env.clone())?;
+                    }
                 }
                 Ok(Value::Nil)
             }
+            Stmt::Break(index) => Err(RuntimeError::ControlFlow(ControlFlow::Break, index.clone())),
+            Stmt::Continue(index) => Err(RuntimeError::ControlFlow(
+                ControlFlow::Continue,
+                index.clone(),
+            )),
         }
     }
 
