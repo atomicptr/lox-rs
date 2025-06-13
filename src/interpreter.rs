@@ -1,7 +1,7 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::{
-    builtins::{lox_assert, lox_panic, time, to_string},
+    builtins::{lox_assert, lox_panic, lox_time, lox_tostring},
     parser::{BinaryOp, Expr, Fn, LogicalOp, NativeFn, Stmt, UnaryOp, Value},
 };
 
@@ -93,10 +93,13 @@ impl Default for Interpreter {
         builtins.is_builtin_env = true;
 
         // define language builtins
-        builtins.define(&String::from("time"), NativeFn::ZeroArity(time).as_value());
         builtins.define(
-            &String::from("to_string"),
-            NativeFn::OneArity(to_string).as_value(),
+            &String::from("time"),
+            NativeFn::ZeroArity(lox_time).as_value(),
+        );
+        builtins.define(
+            &String::from("tostring"),
+            NativeFn::OneArity(lox_tostring).as_value(),
         );
         builtins.define(
             &String::from("panic"),
