@@ -99,6 +99,10 @@ pub fn print_parser_error(source: &String, err: &ParserError) {
         ParserError::MaximumArgsExceeded(index) => {
             ("can't have more than 255 arguments".to_string(), index)
         }
+        ParserError::ExpectedName(kind, index) => (format!("expected {kind} name"), index),
+        ParserError::ExpectedLBraceBeforeBody(what, index) => {
+            (format!("expected '{{' before {what} body"), index)
+        }
     };
 
     print_error_at(source, index.clone(), message.as_str());

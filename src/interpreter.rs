@@ -2,7 +2,7 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::{
     builtins::{lox_assert, lox_panic, time, to_string},
-    parser::{BinaryOp, Expr, LogicalOp, NativeFn, Stmt, UnaryOp, Value},
+    parser::{BinaryOp, Expr, Fn, LogicalOp, NativeFn, Stmt, UnaryOp, Value},
 };
 
 #[derive(Debug, Default)]
@@ -185,6 +185,13 @@ impl Interpreter {
                 ControlFlow::Continue,
                 index.clone(),
             )),
+            Stmt::Func(name, params, body) => {
+                env.borrow_mut().define(
+                    name,
+                    Value::Func(Fn::LoxFunc(name.clone(), params.clone(), body.clone())),
+                );
+                Ok(Value::Nil)
+            }
         }
     }
 
@@ -386,11 +393,45 @@ impl Interpreter {
                             ));
                         }
 
-                        Ok(fun.call(self, &args, callee.token_index())?)
+                        self.call_func(fun, &args, env.clone(), callee.token_index())
                     }
                     _ => Err(RuntimeError::NotCallable(callee.token_index())),
                 }
             }
+        }
+    }
+
+    fn call_func(
+        &mut self,
+        fun: Fn,
+        args: &Vec<Value>,
+        env: Rc<RefCell<Env>>,
+        index: usize,
+    ) -> Result<Value, RuntimeError> {
+        match fun {
+            Fn::LoxFunc(name, params, block) => {
+                let env = Env::create_child(env);
+
+                env.borrow_mut()
+                    .define(&String::from("__FUN"), Value::from(name.clone()));
+
+                for (i, param) in params.iter().enumerate() {
+                    env.borrow_mut().define(param, args.get(i).unwrap().clone());
+                }
+
+                self.evaluate_block(&block, env)?;
+
+                Ok(Value::Nil)
+            }
+            Fn::NativeFunc(fun) => match fun {
+                NativeFn::ZeroArity(fun) => fun(index),
+                NativeFn::OneArity(fun) => fun(index, args.first().unwrap().clone()),
+                NativeFn::TwoArity(fun) => fun(
+                    index,
+                    args.get(0).unwrap().clone(),
+                    args.get(1).unwrap().clone(),
+                ),
+            },
         }
     }
 

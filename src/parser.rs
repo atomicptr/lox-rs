@@ -1,7 +1,7 @@
-use std::fmt::Display;
+use std::{cell::RefCell, fmt::Display, rc::Rc};
 
 use crate::{
-    interpreter::{Interpreter, RuntimeError},
+    interpreter::{Env, Interpreter, RuntimeError},
     lexer::Token,
 };
 
@@ -30,40 +30,26 @@ impl Display for Value {
     }
 }
 
+impl From<String> for Value {
+    fn from(value: String) -> Self {
+        Value::String(value)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum Fn {
-    LoxFunc,
+    LoxFunc(String, Vec<String>, Vec<Stmt>),
     NativeFunc(NativeFn),
 }
 
 impl Fn {
     pub fn arity(&self) -> usize {
         match self {
-            Fn::LoxFunc => 0,
+            Fn::LoxFunc(_, params, _) => params.len(),
             Fn::NativeFunc(fun) => match fun {
                 NativeFn::ZeroArity(_) => 0,
                 NativeFn::OneArity(_) => 1,
                 NativeFn::TwoArity(_) => 2,
-            },
-        }
-    }
-
-    pub fn call(
-        &self,
-        interpreter: &mut Interpreter,
-        args: &Vec<Value>,
-        index: usize,
-    ) -> Result<Value, RuntimeError> {
-        match self {
-            Fn::LoxFunc => todo!(),
-            Fn::NativeFunc(fun) => match fun {
-                NativeFn::ZeroArity(fun) => fun(index),
-                NativeFn::OneArity(fun) => fun(index, args.first().unwrap().clone()),
-                NativeFn::TwoArity(fun) => fun(
-                    index,
-                    args.first().unwrap().clone(),
-                    args.get(1).unwrap().clone(),
-                ),
             },
         }
     }
@@ -72,8 +58,10 @@ impl Fn {
 impl Display for Fn {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let res = match self {
-            Fn::LoxFunc => format!("fn/{}()", self.arity()),
-            Fn::NativeFunc(_) => format!("<native> fn/{}()", self.arity()),
+            Fn::LoxFunc(name, params, _) => {
+                format!("<fun {name}/{}({})>", self.arity(), params.join(", "))
+            }
+            Fn::NativeFunc(_) => format!("<native fun/{}(...)>", self.arity()),
         };
 
         write!(f, "{res}")?;
@@ -239,12 +227,13 @@ impl Expr {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Stmt {
     Print(Box<Expr>),
     Expr(Box<Expr>),
     Var(String, Box<Expr>),
     Block(Vec<Stmt>),
+    Func(String, Vec<String>, Vec<Stmt>),
     If(Box<Expr>, Box<Stmt>, Option<Box<Stmt>>),
     While(Box<Expr>, Box<Stmt>, Option<Box<Stmt>>),
     Break(usize),
@@ -276,6 +265,8 @@ pub enum ParserError {
     ExpectedRParenAfter(String, usize),
     ExpectedSemicolonAfterLoopCondition(usize),
     MaximumArgsExceeded(usize),
+    ExpectedName(String, usize),
+    ExpectedLBraceBeforeBody(String, usize),
 }
 
 /*
@@ -284,7 +275,10 @@ Expression Grammar:
 -------------------
 
 program        → declaration* EOF ;
-declaration    → varDecl | statement;
+declaration    → funDecl | varDecl | statement;
+funDecl        → "fun" function ;
+function       → IDENTIFIER "(" parameters? ")" block ;
+parameters     → IDENTIFIER ( "," IDENTIFIER )* ;
 varDecl        → "var" IDENTIFIER ( "=" expression )? ";" ;
 statement      → exprStmt | "break" | "continue" | forStmt | ifStmt | printStmt | whileStmt | block ;
 exprStmt       → expression ";" ;
@@ -345,11 +339,78 @@ impl Parser {
 
     // declaration    → varDecl | statement;
     fn declaration(&mut self) -> Result<Stmt, ParserError> {
-        if self.matches(&[Token::Var]) {
+        if self.matches(&[Token::Fun]) {
+            self.function()
+        } else if self.matches(&[Token::Var]) {
             self.var_declaration()
         } else {
             self.statement()
         }
+    }
+
+    // function       → IDENTIFIER "(" parameters? ")" block ;
+    fn function(&mut self) -> Result<Stmt, ParserError> {
+        if let Some((Token::Identifier(name), index)) =
+            self.consume(Token::Identifier("".to_string()))
+        {
+            let name = name.clone();
+            let index = index.clone();
+
+            if self.consume_isnt(Token::LParen) {
+                return Err(ParserError::ExpectedLParenAfter(
+                    format!("function {name}"),
+                    index,
+                ));
+            }
+
+            let mut params = vec![];
+
+            let (curr, _) = self.current().unwrap();
+
+            if *curr != Token::RParen {
+                if let Some((Token::Identifier(name), _)) =
+                    self.consume(Token::Identifier("".to_string()))
+                {
+                    params.push(name.clone());
+                }
+
+                while self.matches(&[Token::Comma]) {
+                    if let Some((Token::Identifier(name), index)) =
+                        self.consume(Token::Identifier("".to_string()))
+                    {
+                        if params.len() >= 255 {
+                            return Err(ParserError::MaximumArgsExceeded(index.clone()));
+                        }
+                        params.push(name.clone());
+                    }
+                }
+            }
+
+            if self.consume_isnt(Token::RParen) {
+                return Err(ParserError::ExpectedRParenAfter(
+                    format!("function {name}"),
+                    index,
+                ));
+            }
+
+            if self.consume_isnt(Token::LBrace) {
+                let (_, index) = self.previous().unwrap();
+                return Err(ParserError::ExpectedLBraceBeforeBody(
+                    format!("function {name}"),
+                    index.clone(),
+                ));
+            }
+
+            let body = self.block()?;
+
+            return Ok(Stmt::Func(name, params, body));
+        }
+
+        let (_, index) = self.previous().unwrap();
+        Err(ParserError::ExpectedName(
+            "function".to_string(),
+            index.clone(),
+        ))
     }
 
     // varDecl        → "var" IDENTIFIER ( "=" expression )? ";" ;
@@ -775,11 +836,6 @@ impl Parser {
         ))
     }
 
-    // arguments      → expression ( "," expression )* ;
-    fn arguments(&mut self) -> Result<Expr, ParserError> {
-        todo!();
-    }
-
     // primary        → NUMBER | STRING | "true" | "false" | "nil"
     //                | "(" expression ")" | IDENTIFIER ;
     fn primary(&mut self) -> Result<Expr, ParserError> {
@@ -982,6 +1038,13 @@ pub fn print_stmt(stmt: &Stmt, indent_level: usize) {
         }
         Stmt::Break(_) => println!("{indent}BREAK"),
         Stmt::Continue(_) => println!("{indent}CONTINUE"),
+        Stmt::Func(name, params, body) => {
+            println!("{indent}Func {name}({})", params.join(", "));
+
+            for stmt in body {
+                print_stmt(stmt, indent_level + 1);
+            }
+        }
     };
 }
 

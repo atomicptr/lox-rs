@@ -96,10 +96,9 @@ fn run(interpreter: &mut Interpreter, code: &String) -> Result<Value, LoxError> 
 
     let stmts = parser::parse(tokens)?;
 
-    // TODO: remove this, this is for testing the parser
-    // for stmt in stmts.iter() {
-    //     print_stmt(stmt, 0);
-    // }
+    for stmt in stmts.iter() {
+        print_stmt(stmt, 0);
+    }
 
     Ok(interpreter.run(&stmts)?)
 }
