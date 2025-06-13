@@ -1,10 +1,10 @@
-use std::collections::HashMap;
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::parser::{BinaryOp, Expr, Stmt, UnaryOp, Value};
 
 #[derive(Debug, Default)]
 pub struct Env {
-    enclosing: Option<Box<Env>>,
+    parent: Option<Rc<RefCell<Env>>>,
     vars: HashMap<String, Value>,
 }
 
@@ -14,8 +14,8 @@ impl Env {
             return Some(value.clone());
         }
 
-        match &self.enclosing {
-            Some(env) => env.get_var(name),
+        match &self.parent {
+            Some(env) => env.borrow().get_var(name),
             None => None,
         }
     }
@@ -36,23 +36,29 @@ impl Env {
             return Ok(());
         }
 
-        // if has enclosing env, assign there
-        if let Some(env) = &mut self.enclosing {
-            return env.assign(name, value, index);
+        // if var exists in parent env, assign there
+        if let Some(env) = &mut self.parent {
+            return env.borrow_mut().assign(name, value, index);
         }
 
         Err(RuntimeError::UnknownVariable(name.clone(), index.clone()))
+    }
+
+    pub fn create_child(parent_env: Rc<RefCell<Env>>) -> Rc<RefCell<Env>> {
+        Rc::new(RefCell::new(Env {
+            parent: Some(parent_env.clone()),
+            ..Default::default()
+        }))
     }
 }
 
 #[derive(Debug, Default)]
 pub struct Interpreter {
-    env: Env,
+    env: Rc<RefCell<Env>>,
 }
 
 #[derive(Debug)]
 pub enum RuntimeError {
-    TypeError(Value, usize),
     BinaryOpUnaryTypeError(Value, BinaryOp, usize),
     BinaryOpTyperError(Value, BinaryOp, Value, usize),
     UnaryOpTypeError(Value, UnaryOp, usize),
@@ -65,37 +71,41 @@ impl Interpreter {
         let mut value = Value::Nil;
 
         for stmt in stmts.iter() {
-            value = self.evaluate_stmt(stmt)?;
+            value = self.evaluate_stmt(stmt, self.env.clone())?;
         }
 
         Ok(value)
     }
 
-    fn evaluate_stmt(&mut self, stmt: &Stmt) -> Result<Value, RuntimeError> {
+    fn evaluate_stmt(&mut self, stmt: &Stmt, env: Rc<RefCell<Env>>) -> Result<Value, RuntimeError> {
         match stmt {
-            Stmt::Print(expr, _) => {
-                let value = self.evaluate_expr(expr)?;
+            Stmt::Print(expr) => {
+                let value = self.evaluate_expr(expr, env)?;
                 println!("{}", value);
                 Ok(Value::Nil)
             }
-            Stmt::Expr(expr, _) => self.evaluate_expr(expr),
-            Stmt::Var(name, expr, _) => {
-                let value = self.evaluate_expr(expr)?;
-                self.env.define(name, value);
+            Stmt::Expr(expr) => self.evaluate_expr(expr, env),
+            Stmt::Var(name, expr) => {
+                let value = self.evaluate_expr(expr, env.clone())?;
+                env.borrow_mut().define(name, value);
+                Ok(Value::Nil)
+            }
+            Stmt::Block(stmts) => {
+                self.evaluate_block(stmts, env)?;
                 Ok(Value::Nil)
             }
         }
     }
 
-    fn evaluate_expr(&mut self, expr: &Expr) -> Result<Value, RuntimeError> {
+    fn evaluate_expr(&mut self, expr: &Expr, env: Rc<RefCell<Env>>) -> Result<Value, RuntimeError> {
         match expr {
             Expr::Binary(lhs, op, rhs, index) => {
                 let index = index.clone();
                 let lhs_index = lhs.token_index();
-                let lhs = self.evaluate_expr(lhs)?;
+                let lhs = self.evaluate_expr(lhs, env.clone())?;
 
                 let rhs_index = rhs.token_index();
-                let rhs = self.evaluate_expr(rhs)?;
+                let rhs = self.evaluate_expr(rhs, env.clone())?;
 
                 match (&lhs, op, &rhs) {
                     // number operations
@@ -213,11 +223,11 @@ impl Interpreter {
                     )),
                 }
             }
-            Expr::Grouping(expr, _) => self.evaluate_expr(expr),
+            Expr::Grouping(expr, _) => self.evaluate_expr(expr, env),
             Expr::Literal(value, _) => Ok(value.clone()),
             Expr::Unary(op, rhs, _) => {
                 let rhs_index = rhs.token_index();
-                let rhs = self.evaluate_expr(rhs)?;
+                let rhs = self.evaluate_expr(rhs, env)?;
 
                 match (op, &rhs) {
                     (UnaryOp::Neg, Value::Number(num)) => Ok(Value::Number(-num)),
@@ -229,19 +239,36 @@ impl Interpreter {
                     (UnaryOp::Not, value) => Ok(Value::Bool(!is_truthy(&value))),
                 }
             }
-            Expr::Variable(name, index) => match self.env.get_var(name) {
+            Expr::Variable(name, index) => match env.borrow().get_var(name) {
                 Some(value) => Ok(value.clone()),
                 None => Err(RuntimeError::UnknownVariable(name.clone(), index.clone())),
             },
-            Expr::Assignment(name, expr, index) => match self.env.get_var(name) {
-                Some(_) => {
-                    let value = self.evaluate_expr(expr)?;
-                    self.env.assign(name, value.clone(), index)?;
-                    Ok(value)
+            Expr::Assignment(name, expr, index) => {
+                let var = env.borrow().get_var(name);
+                match var {
+                    Some(_) => {
+                        let value = self.evaluate_expr(expr, env.clone())?;
+                        env.borrow_mut().assign(name, value.clone(), index)?;
+                        Ok(value)
+                    }
+                    None => Err(RuntimeError::UnknownVariable(name.clone(), index.clone())),
                 }
-                None => Err(RuntimeError::UnknownVariable(name.clone(), index.clone())),
-            },
+            }
         }
+    }
+
+    fn evaluate_block(
+        &mut self,
+        stmts: &Vec<Stmt>,
+        env: Rc<RefCell<Env>>,
+    ) -> Result<(), RuntimeError> {
+        let new_env = Env::create_child(env);
+
+        for stmt in stmts.iter() {
+            let _ = self.evaluate_stmt(stmt, new_env.clone())?;
+        }
+
+        Ok(())
     }
 }
 fn is_truthy(value: &Value) -> bool {

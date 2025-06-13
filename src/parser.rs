@@ -136,12 +136,13 @@ impl Expr {
 
 #[derive(Debug)]
 pub enum Stmt {
-    Print(Box<Expr>, usize),
-    Expr(Box<Expr>, usize),
-    Var(String, Box<Expr>, usize),
+    Print(Box<Expr>),
+    Expr(Box<Expr>),
+    Var(String, Box<Expr>),
+    Block(Vec<Stmt>),
 }
 
-pub fn parse(tokens: Vec<(Token, usize)>) -> Result<Vec<Stmt>, ParserError> {
+pub fn parse(tokens: Vec<(Token, usize)>) -> Result<Vec<Stmt>, Vec<ParserError>> {
     let mut p = Parser::from(tokens);
     p.program()
 }
@@ -160,6 +161,7 @@ pub enum ParserError {
     ExpectedSemicolonAfterStmt(usize),
     ExpectedSemicolonAfterExpr(usize),
     InvalidAssignmentTarget(usize),
+    ExpectedRBraceAfterBlock(usize),
 }
 
 /*
@@ -170,7 +172,8 @@ Expression Grammar:
 program        → declaration* EOF ;
 declaration    → varDecl | statement;
 varDecl        → "var" IDENTIFIER ( "=" expression )? ";" ;
-statement      → exprStmt | printStmt ;
+statement      → exprStmt | printStmt | block ;
+block          → "{" declaration* "}" ;
 exprStmt       → expression ";" ;
 printStmt      → "print" expression ";" ;
 expression     → assignment ;
@@ -192,12 +195,25 @@ impl Parser {
     }
 
     // program        → declaration* EOF ;
-    fn program(&mut self) -> Result<Vec<Stmt>, ParserError> {
+    fn program(&mut self) -> Result<Vec<Stmt>, Vec<ParserError>> {
         let mut stmts = vec![];
 
+        let mut errors = vec![];
+
         while !self.is_at_end() {
-            // TODO: sync on error and collect errors
-            stmts.push(self.declaration()?);
+            let stmt = self.declaration();
+
+            if stmt.is_err() {
+                errors.push(stmt.unwrap_err());
+                self.sync();
+                continue;
+            }
+
+            stmts.push(stmt.unwrap());
+        }
+
+        if !errors.is_empty() {
+            return Err(errors);
         }
 
         Ok(stmts)
@@ -230,7 +246,6 @@ impl Parser {
                 return Ok(Stmt::Var(
                     name,
                     Box::new(initializer.unwrap_or(Expr::Literal(Value::Nil, index.clone()))),
-                    index.clone(),
                 ));
             }
 
@@ -243,22 +258,46 @@ impl Parser {
         Err(ParserError::UnexpectedToken(token.clone(), index.clone()))
     }
 
-    // statement      → exprStmt | printStmt ;
+    // statement      → exprStmt | printStmt | block ;
     fn statement(&mut self) -> Result<Stmt, ParserError> {
         if self.matches(&[Token::Print]) {
             self.print_stmt()
+        } else if self.matches(&[Token::LBrace]) {
+            let stmts = self.block()?;
+            Ok(Stmt::Block(stmts))
         } else {
             self.expr_stmt()
         }
+    }
+
+    // block          → "{" declaration* "}" ;
+    fn block(&mut self) -> Result<Vec<Stmt>, ParserError> {
+        let mut stmts = vec![];
+
+        while !self.is_at_end() {
+            if let Some((token, _)) = self.current() {
+                if *token == Token::RBrace {
+                    break;
+                }
+
+                stmts.push(self.declaration()?);
+            }
+        }
+
+        if let Some(_) = self.consume(Token::RBrace) {
+            return Ok(stmts);
+        }
+
+        let (_, index) = self.previous().unwrap();
+        Err(ParserError::ExpectedRBraceAfterBlock(index.clone()))
     }
 
     // exprStmt       → expression ";" ;
     fn expr_stmt(&mut self) -> Result<Stmt, ParserError> {
         let expr = self.expression()?;
 
-        if let Some((_, index)) = self.consume(Token::Semicolon) {
-            let index = index.clone();
-            Ok(Stmt::Expr(Box::new(expr), index))
+        if let Some(_) = self.consume(Token::Semicolon) {
+            Ok(Stmt::Expr(Box::new(expr)))
         } else {
             Err(ParserError::ExpectedSemicolonAfterExpr(expr.token_index()))
         }
@@ -268,9 +307,8 @@ impl Parser {
     fn print_stmt(&mut self) -> Result<Stmt, ParserError> {
         let expr = self.expression()?;
 
-        if let Some((_, index)) = self.consume(Token::Semicolon) {
-            let index = index.clone();
-            Ok(Stmt::Print(Box::new(expr), index))
+        if let Some(_) = self.consume(Token::Semicolon) {
+            Ok(Stmt::Print(Box::new(expr)))
         } else {
             Err(ParserError::ExpectedSemicolonAfterStmt(expr.token_index()))
         }
@@ -527,17 +565,26 @@ pub fn print_stmt(stmt: &Stmt, indent_level: usize) {
     let indent = " ".repeat(indent_level * 4);
 
     let expr = match stmt {
-        Stmt::Print(expr, _) => {
+        Stmt::Print(expr) => {
             println!("{indent}Print");
             expr
         }
-        Stmt::Expr(expr, _) => {
+        Stmt::Expr(expr) => {
             println!("{indent}Expr");
             expr
         }
-        Stmt::Var(name, expr, _) => {
+        Stmt::Var(name, expr) => {
             println!("{indent}Set var '{name}':");
             expr
+        }
+        Stmt::Block(stmts) => {
+            println!("{indent}Block:");
+
+            for stmt in stmts.iter() {
+                print_stmt(stmt, indent_level + 1);
+            }
+
+            return;
         }
     };
 

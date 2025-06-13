@@ -66,7 +66,7 @@ pub fn print_lexer_error(source: &String, err: LexerError) {
     print_error_at(source, index, message.as_str());
 }
 
-pub fn print_parser_error(source: &String, err: ParserError) {
+pub fn print_parser_error(source: &String, err: &ParserError) {
     let (message, index) = match err {
         ParserError::UnexpectedToken(token, index) => {
             (format!("unexpected token '{:?}'", token), index)
@@ -84,16 +84,16 @@ pub fn print_parser_error(source: &String, err: ParserError) {
         ParserError::InvalidAssignmentTarget(index) => {
             ("invalid assignment target".to_string(), index)
         }
+        ParserError::ExpectedRBraceAfterBlock(index) => {
+            ("expected '}' after block".to_string(), index)
+        }
     };
 
-    print_error_at(source, index, message.as_str());
+    print_error_at(source, index.clone(), message.as_str());
 }
 
 pub fn print_interpreter_error(source: &String, err: RuntimeError) {
     let (message, index) = match err {
-        RuntimeError::TypeError(val, index) => {
-            (format!("value '{:?}' can't be used here", val), index)
-        }
         RuntimeError::BinaryOpUnaryTypeError(value, op, index) => (
             format!("operator '{op}' can't be used with '{:?}'", value),
             index,
