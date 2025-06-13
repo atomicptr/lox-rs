@@ -93,6 +93,9 @@ pub fn print_parser_error(source: &String, err: &ParserError) {
         ParserError::ExpectedRParenAfter(what, index) => {
             ("expected ')' after '{what}'".to_string(), index)
         }
+        ParserError::ExpectedSemicolonAfterLoopCondition(index) => {
+            ("expected ';' after loop condition".to_string(), index)
+        }
     };
 
     print_error_at(source, index.clone(), message.as_str());

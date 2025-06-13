@@ -199,6 +199,7 @@ pub enum ParserError {
     ExpectedRBraceAfterBlock(usize),
     ExpectedLParenAfter(String, usize),
     ExpectedRParenAfter(String, usize),
+    ExpectedSemicolonAfterLoopCondition(usize),
 }
 
 /*
@@ -209,8 +210,9 @@ Expression Grammar:
 program        → declaration* EOF ;
 declaration    → varDecl | statement;
 varDecl        → "var" IDENTIFIER ( "=" expression )? ";" ;
-statement      → exprStmt | ifStmt | printStmt | whileStmt | block ;
+statement      → exprStmt | forStmt | ifStmt | printStmt | whileStmt | block ;
 exprStmt       → expression ";" ;
+forStmt        → "for" "(" ( varDecl | exprStmt | ";" ) expression? ";" expression? ")" statement ;
 ifStmt         → "if" "(" expression ")" statement ( "else" statement )? ;
 printStmt      → "print" expression ";" ;
 whileStmt      → "while" "(" expression ")" statement ;
@@ -299,9 +301,11 @@ impl Parser {
         Err(ParserError::UnexpectedToken(token.clone(), index.clone()))
     }
 
-    // statement      → exprStmt | ifStmt | printStmt | whileStmt | block ;
+    // statement      → exprStmt | forStmt | ifStmt | printStmt | whileStmt | block ;
     fn statement(&mut self) -> Result<Stmt, ParserError> {
-        if self.matches(&[Token::If]) {
+        if self.matches(&[Token::For]) {
+            self.for_stmt()
+        } else if self.matches(&[Token::If]) {
             self.if_stmt()
         } else if self.matches(&[Token::Print]) {
             self.print_stmt()
@@ -346,6 +350,78 @@ impl Parser {
         } else {
             Err(ParserError::ExpectedSemicolonAfterExpr(expr.token_index()))
         }
+    }
+
+    // forStmt        → "for" "(" ( varDecl | exprStmt | ";" ) expression? ";" expression? ")" statement ;
+    fn for_stmt(&mut self) -> Result<Stmt, ParserError> {
+        if self.consume_isnt(Token::LParen) {
+            let (_, index) = self.previous().unwrap();
+            return Err(ParserError::ExpectedLParenAfter(
+                "for".to_string(),
+                index.clone(),
+            ));
+        }
+
+        let initializer = if self.matches(&[Token::Semicolon]) {
+            None
+        } else if self.matches(&[Token::Var]) {
+            Some(self.var_declaration()?)
+        } else {
+            Some(self.expr_stmt()?)
+        };
+
+        let (cond_token, cond_index) = self.current().unwrap();
+        let cond_index = cond_index.clone();
+
+        let condition = if *cond_token != Token::Semicolon {
+            Some(self.expression()?)
+        } else {
+            None
+        };
+
+        if self.consume_isnt(Token::Semicolon) {
+            return Err(ParserError::ExpectedSemicolonAfterLoopCondition(cond_index));
+        }
+
+        let (incr_token, incr_index) = self.current().unwrap();
+        let incr_index = incr_index.clone();
+
+        let incr = if *incr_token != Token::Semicolon {
+            Some(self.expression()?)
+        } else {
+            None
+        };
+
+        if self.consume_isnt(Token::RParen) {
+            return Err(ParserError::ExpectedRParenAfter(
+                "for clause".to_string(),
+                incr_index,
+            ));
+        }
+
+        let body = self.statement()?;
+
+        // transform for loop into while loop
+
+        // append increment block to body
+        let body = if let Some(incr) = incr {
+            Stmt::Block(vec![body, Stmt::Expr(Box::new(incr))])
+        } else {
+            body
+        };
+
+        // transform body into while loop with condition (or infinite loop if condition is empty)
+        let body = Stmt::While(
+            Box::new(condition.unwrap_or(Expr::Literal(Value::Bool(true), cond_index))),
+            Box::new(body),
+        );
+
+        // prepend initializer in front of while loop
+        if let Some(initializer) = initializer {
+            return Ok(Stmt::Block(vec![initializer, body]));
+        }
+
+        Ok(body)
     }
 
     // ifStmt         → "if" "(" expression ")" statement ( "else" statement )? ;
@@ -697,6 +773,18 @@ impl Parser {
             }
         }
         None
+    }
+
+    fn consume_is(&mut self, token: Token) -> bool {
+        if let Some(_) = self.consume(token) {
+            true
+        } else {
+            false
+        }
+    }
+
+    fn consume_isnt(&mut self, token: Token) -> bool {
+        !self.consume_is(token)
     }
 }
 
