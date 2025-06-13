@@ -87,6 +87,10 @@ pub fn print_parser_error(source: &String, err: &ParserError) {
         ParserError::ExpectedRBraceAfterBlock(index) => {
             ("expected '}' after block".to_string(), index)
         }
+        ParserError::ExpectedLParenAfterIf(index) => ("expected '(' after 'if'".to_string(), index),
+        ParserError::ExpectedRParenAfterIf(index) => {
+            ("expected ')' after the 'if' condition".to_string(), index)
+        }
     };
 
     print_error_at(source, index.clone(), message.as_str());

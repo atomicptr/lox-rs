@@ -94,6 +94,17 @@ impl Interpreter {
                 self.evaluate_block(stmts, env)?;
                 Ok(Value::Nil)
             }
+            Stmt::If(condition, then_branch, else_branch) => {
+                let value = self.evaluate_expr(condition, env.clone())?;
+
+                if is_truthy(&value) {
+                    self.evaluate_stmt(then_branch, env)?;
+                } else if let Some(else_branch) = else_branch {
+                    self.evaluate_stmt(else_branch, env)?;
+                }
+
+                Ok(Value::Nil)
+            }
         }
     }
 

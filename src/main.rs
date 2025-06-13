@@ -7,7 +7,7 @@ use std::{
 use errormsg::{print_interpreter_error, print_lexer_error, print_parser_error};
 use interpreter::{Interpreter, RuntimeError};
 use lexer::{LexerError, lexer};
-use parser::{ParserError, print_stmt};
+use parser::{ParserError, Value, print_stmt};
 
 mod errormsg;
 mod interpreter;
@@ -41,7 +41,7 @@ fn run_prompt() {
         let s = s.trim().to_string();
 
         match run(&mut interpreter, &s) {
-            Ok(()) => {}
+            Ok(val) => println!("{}", val),
             Err(LoxError::LexerError(err)) => print_lexer_error(&s, err),
             Err(LoxError::ParserErrors(errs)) => {
                 errs.iter().for_each(|err| print_parser_error(&s, err))
@@ -57,7 +57,7 @@ fn run_file(file: &String) {
     let mut interpreter = Interpreter::default();
 
     match run(&mut interpreter, &source) {
-        Ok(()) => {}
+        Ok(_) => {}
         Err(LoxError::LexerError(err)) => print_lexer_error(&source, err),
         Err(LoxError::ParserErrors(errs)) => {
             errs.iter().for_each(|err| print_parser_error(&source, err))
@@ -90,18 +90,15 @@ impl From<RuntimeError> for LoxError {
     }
 }
 
-fn run(interpreter: &mut Interpreter, code: &String) -> Result<(), LoxError> {
+fn run(interpreter: &mut Interpreter, code: &String) -> Result<Value, LoxError> {
     let tokens = lexer(&code)?;
 
     let stmts = parser::parse(tokens)?;
 
+    // TODO: remove this, this is for testing the parser
     for stmt in stmts.iter() {
         print_stmt(stmt, 0);
     }
 
-    let value = interpreter.run(&stmts)?;
-
-    println!("{}", value);
-
-    Ok(())
+    Ok(interpreter.run(&stmts)?)
 }

@@ -140,6 +140,7 @@ pub enum Stmt {
     Expr(Box<Expr>),
     Var(String, Box<Expr>),
     Block(Vec<Stmt>),
+    If(Box<Expr>, Box<Stmt>, Option<Box<Stmt>>),
 }
 
 pub fn parse(tokens: Vec<(Token, usize)>) -> Result<Vec<Stmt>, Vec<ParserError>> {
@@ -162,6 +163,8 @@ pub enum ParserError {
     ExpectedSemicolonAfterExpr(usize),
     InvalidAssignmentTarget(usize),
     ExpectedRBraceAfterBlock(usize),
+    ExpectedLParenAfterIf(usize),
+    ExpectedRParenAfterIf(usize),
 }
 
 /*
@@ -172,10 +175,11 @@ Expression Grammar:
 program        → declaration* EOF ;
 declaration    → varDecl | statement;
 varDecl        → "var" IDENTIFIER ( "=" expression )? ";" ;
-statement      → exprStmt | printStmt | block ;
-block          → "{" declaration* "}" ;
+statement      → exprStmt | ifStmt | printStmt | block ;
 exprStmt       → expression ";" ;
+ifStmt         → "if" "(" expression ")" statement ( "else" statement )? ;
 printStmt      → "print" expression ";" ;
+block          → "{" declaration* "}" ;
 expression     → assignment ;
 assignment     → IDENTIFIER "=" assignment | equality;
 equality       → comparison ( ( "!=" | "==" ) comparison )* ;
@@ -260,7 +264,9 @@ impl Parser {
 
     // statement      → exprStmt | printStmt | block ;
     fn statement(&mut self) -> Result<Stmt, ParserError> {
-        if self.matches(&[Token::Print]) {
+        if self.matches(&[Token::If]) {
+            self.if_stmt()
+        } else if self.matches(&[Token::Print]) {
             self.print_stmt()
         } else if self.matches(&[Token::LBrace]) {
             let stmts = self.block()?;
@@ -301,6 +307,33 @@ impl Parser {
         } else {
             Err(ParserError::ExpectedSemicolonAfterExpr(expr.token_index()))
         }
+    }
+
+    // ifStmt         → "if" "(" expression ")" statement ( "else" statement )? ;
+    fn if_stmt(&mut self) -> Result<Stmt, ParserError> {
+        if let Some(_) = self.consume(Token::LParen) {
+            let condition = self.expression()?;
+
+            if let Some(_) = self.consume(Token::RParen) {
+                let then_branch = self.statement()?;
+                let else_branch = if self.matches(&[Token::Else]) {
+                    Some(Box::new(self.statement()?))
+                } else {
+                    None
+                };
+
+                return Ok(Stmt::If(
+                    Box::new(condition),
+                    Box::new(then_branch),
+                    else_branch,
+                ));
+            }
+
+            return Err(ParserError::ExpectedRParenAfterIf(condition.token_index()));
+        }
+
+        let (_, index) = self.previous().unwrap();
+        Err(ParserError::ExpectedLParenAfterIf(index.clone()))
     }
 
     // printStmt      → "print" expression ";" ;
@@ -564,18 +597,18 @@ impl Parser {
 pub fn print_stmt(stmt: &Stmt, indent_level: usize) {
     let indent = " ".repeat(indent_level * 4);
 
-    let expr = match stmt {
+    match stmt {
         Stmt::Print(expr) => {
             println!("{indent}Print");
-            expr
+            print_expr(expr, indent_level + 1);
         }
         Stmt::Expr(expr) => {
             println!("{indent}Expr");
-            expr
+            print_expr(expr, indent_level + 1);
         }
         Stmt::Var(name, expr) => {
             println!("{indent}Set var '{name}':");
-            expr
+            print_expr(expr, indent_level + 1);
         }
         Stmt::Block(stmts) => {
             println!("{indent}Block:");
@@ -583,12 +616,18 @@ pub fn print_stmt(stmt: &Stmt, indent_level: usize) {
             for stmt in stmts.iter() {
                 print_stmt(stmt, indent_level + 1);
             }
+        }
+        Stmt::If(expr, then_branch, else_branch) => {
+            println!("{indent}If:");
 
-            return;
+            print_expr(expr, indent_level + 1);
+            print_stmt(then_branch, indent_level + 1);
+
+            if let Some(else_branch) = else_branch {
+                print_stmt(else_branch, indent_level + 1);
+            }
         }
     };
-
-    print_expr(expr, indent_level + 1);
 }
 
 pub fn print_expr(expr: &Expr, indent_level: usize) {
