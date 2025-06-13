@@ -335,48 +335,11 @@ impl Parser {
 
     // function       → IDENTIFIER "(" parameters? ")" block ;
     fn function(&mut self) -> Result<Stmt, ParserError> {
-        if let Some((Token::Identifier(name), index)) =
-            self.consume(Token::Identifier("".to_string()))
+        if let Some((Token::Identifier(name), _)) = self.consume(Token::Identifier("".to_string()))
         {
             let name = name.clone();
-            let index = index.clone();
 
-            if self.consume_isnt(Token::LParen) {
-                return Err(ParserError::ExpectedLParenAfter(
-                    format!("function {name}"),
-                    index,
-                ));
-            }
-
-            let mut params = vec![];
-
-            let (curr, _) = self.current().unwrap();
-
-            if *curr != Token::RParen {
-                if let Some((Token::Identifier(name), _)) =
-                    self.consume(Token::Identifier("".to_string()))
-                {
-                    params.push(name.clone());
-                }
-
-                while self.matches(&[Token::Comma]) {
-                    if let Some((Token::Identifier(name), index)) =
-                        self.consume(Token::Identifier("".to_string()))
-                    {
-                        if params.len() >= 255 {
-                            return Err(ParserError::MaximumArgsExceeded(index.clone()));
-                        }
-                        params.push(name.clone());
-                    }
-                }
-            }
-
-            if self.consume_isnt(Token::RParen) {
-                return Err(ParserError::ExpectedRParenAfter(
-                    format!("function {name}"),
-                    index,
-                ));
-            }
+            let params = self.parameters(format!("function {name}"))?;
 
             if self.consume_isnt(Token::LBrace) {
                 let (_, index) = self.previous().unwrap();
@@ -396,6 +359,43 @@ impl Parser {
             "function".to_string(),
             index.clone(),
         ))
+    }
+
+    fn parameters(&mut self, what: String) -> Result<Vec<String>, ParserError> {
+        if self.consume_isnt(Token::LParen) {
+            let (_, index) = self.previous().unwrap();
+            return Err(ParserError::ExpectedLParenAfter(what, index.clone()));
+        }
+
+        let mut params = vec![];
+
+        let (curr, _) = self.current().unwrap();
+
+        if *curr != Token::RParen {
+            if let Some((Token::Identifier(name), _)) =
+                self.consume(Token::Identifier("".to_string()))
+            {
+                params.push(name.clone());
+            }
+
+            while self.matches(&[Token::Comma]) {
+                if let Some((Token::Identifier(name), index)) =
+                    self.consume(Token::Identifier("".to_string()))
+                {
+                    if params.len() >= 255 {
+                        return Err(ParserError::MaximumArgsExceeded(index.clone()));
+                    }
+                    params.push(name.clone());
+                }
+            }
+        }
+
+        if self.consume_isnt(Token::RParen) {
+            let (_, index) = self.previous().unwrap();
+            return Err(ParserError::ExpectedRParenAfter(what, index.clone()));
+        }
+
+        Ok(params)
     }
 
     // varDecl        → "var" IDENTIFIER ( "=" expression )? ";" ;
