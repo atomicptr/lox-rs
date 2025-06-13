@@ -709,8 +709,7 @@ impl Parser {
                 return Ok(Expr::Grouping(Box::new(expr), (start, end)));
             }
 
-            // TODO: get the index
-            return Err(ParserError::CouldntFindRParen(0));
+            return Err(ParserError::CouldntFindRParen(expr.token_index()));
         }
 
         let (_, index) = self.current().unwrap();
