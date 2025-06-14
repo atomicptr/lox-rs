@@ -21,12 +21,20 @@ pub fn resolve(interpreter: &mut Interpreter, stmts: &Vec<Stmt>) -> Result<(), R
 pub enum ResolverError {
     CantReadLocalVarInItsOwnInitializer(usize),
     VariableAlreadyDeclared(String, usize),
+    UnusedVar(String, usize),
 }
 
 #[derive(Debug)]
 struct Resolver<'a> {
     interpreter: &'a mut Interpreter,
-    scopes: Vec<HashMap<String, bool>>,
+    scopes: Vec<HashMap<String, VarState>>,
+}
+
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum VarState {
+    Declared(usize),
+    Defined(usize),
+    Used,
 }
 
 impl Resolver<'_> {
@@ -43,6 +51,7 @@ impl Resolver<'_> {
             Stmt::Block(stmts) => {
                 self.begin_scope();
                 self.resolve(stmts)?;
+                self.report_unused_vars()?;
                 self.end_scope();
 
                 Ok(())
@@ -54,13 +63,13 @@ impl Resolver<'_> {
                     self.resolve_expr(expr)?;
                 }
 
-                self.define(name);
+                self.define(name, stmt.stmt_index());
 
                 Ok(())
             }
             Stmt::Func(name, params, body, _) => {
                 self.declare(name, stmt.stmt_index())?;
-                self.define(name);
+                self.define(name, stmt.stmt_index());
 
                 self.resolve_func(params, body)?;
 
@@ -104,10 +113,11 @@ impl Resolver<'_> {
 
         for (param, index) in params {
             self.declare(param, index.clone())?;
-            self.define(param);
+            self.define(param, index.clone());
         }
 
         self.resolve(body)?;
+        self.report_unused_vars()?;
 
         self.end_scope();
 
@@ -119,12 +129,10 @@ impl Resolver<'_> {
             Expr::Literal(_, _) => Ok(()),
             Expr::Variable(name, index) => {
                 if let Some(scope) = self.scopes.first() {
-                    if let Some(defined) = scope.get(name) {
-                        if !defined {
-                            return Err(ResolverError::CantReadLocalVarInItsOwnInitializer(
-                                index.clone(),
-                            ));
-                        }
+                    if let Some(VarState::Declared(_)) = scope.get(name) {
+                        return Err(ResolverError::CantReadLocalVarInItsOwnInitializer(
+                            index.clone(),
+                        ));
                     }
                 }
 
@@ -167,9 +175,11 @@ impl Resolver<'_> {
     }
 
     fn resolve_local(&mut self, expr: &Expr, name: &String) {
-        for (i, scope) in self.scopes.iter().rev().enumerate() {
+        for (i, scope) in self.scopes.iter_mut().rev().enumerate() {
             if let Some(_) = scope.get(name) {
                 self.interpreter.resolve(expr, i);
+
+                scope.insert(name.clone(), VarState::Used);
             }
         }
     }
@@ -181,15 +191,15 @@ impl Resolver<'_> {
                 return Err(ResolverError::VariableAlreadyDeclared(name.clone(), index));
             }
 
-            scope.insert(name.clone(), false);
+            scope.insert(name.clone(), VarState::Declared(index));
         }
 
         Ok(())
     }
 
-    fn define(&mut self, name: &String) {
+    fn define(&mut self, name: &String, index: usize) {
         if let Some(scope) = self.scopes.first_mut() {
-            scope.insert(name.clone(), true);
+            scope.insert(name.clone(), VarState::Defined(index));
         }
     }
 
@@ -201,6 +211,26 @@ impl Resolver<'_> {
         self.scopes
             .pop()
             .expect("tried to pop scopes stack when it was empty");
+    }
+
+    fn report_unused_vars(&self) -> Result<(), ResolverError> {
+        if let Some(scope) = self.scopes.first() {
+            for (name, state) in scope.iter() {
+                if let VarState::Used = state {
+                    continue;
+                }
+
+                let index = match state {
+                    VarState::Declared(index) => index.clone(),
+                    VarState::Defined(index) => index.clone(),
+                    VarState::Used => unreachable!(),
+                };
+
+                return Err(ResolverError::UnusedVar(name.clone(), index));
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -214,6 +244,7 @@ pub fn print_resolver_error(source: &String, err: ResolverError) {
             format!("there is already a variable named {name} declared in this scope"),
             index,
         ),
+        ResolverError::UnusedVar(name, index) => (format!("unused variable '{name}'"), index),
     };
 
     print_error_at(source, index, message.as_str());
