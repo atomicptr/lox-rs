@@ -20,6 +20,7 @@ pub fn resolve(interpreter: &mut Interpreter, stmts: &Vec<Stmt>) -> Result<(), R
 #[derive(Debug)]
 pub enum ResolverError {
     CantReadLocalVarInItsOwnInitializer(usize),
+    VariableAlreadyDeclared(String, usize),
 }
 
 #[derive(Debug)]
@@ -46,8 +47,8 @@ impl Resolver<'_> {
 
                 Ok(())
             }
-            Stmt::Var(name, expr) => {
-                self.declare(name);
+            Stmt::Var(name, expr, _) => {
+                self.declare(name, stmt.stmt_index())?;
 
                 if let Some(expr) = expr {
                     self.resolve_expr(expr)?;
@@ -57,8 +58,8 @@ impl Resolver<'_> {
 
                 Ok(())
             }
-            Stmt::Func(name, params, body) => {
-                self.declare(name);
+            Stmt::Func(name, params, body, _) => {
+                self.declare(name, stmt.stmt_index())?;
                 self.define(name);
 
                 self.resolve_func(params, body)?;
@@ -66,7 +67,7 @@ impl Resolver<'_> {
                 Ok(())
             }
             Stmt::Expr(expr) => self.resolve_expr(expr),
-            Stmt::If(condition, then_branch, else_branch) => {
+            Stmt::If(condition, then_branch, else_branch, _) => {
                 self.resolve_expr(condition)?;
                 self.resolve_stmt(then_branch)?;
 
@@ -76,10 +77,10 @@ impl Resolver<'_> {
 
                 Ok(())
             }
-            Stmt::Print(expr) => self.resolve_expr(expr),
+            Stmt::Print(expr, _) => self.resolve_expr(expr),
             Stmt::Return(Some(expr), _) => self.resolve_expr(expr),
             Stmt::Return(None, _) => Ok(()),
-            Stmt::While(condition, body, after) => {
+            Stmt::While(condition, body, after, _) => {
                 self.resolve_expr(condition)?;
                 self.resolve_stmt(body)?;
 
@@ -96,14 +97,13 @@ impl Resolver<'_> {
 
     fn resolve_func(
         &mut self,
-
-        params: &Vec<String>,
+        params: &Vec<(String, usize)>,
         body: &Vec<Stmt>,
     ) -> Result<(), ResolverError> {
         self.begin_scope();
 
-        for param in params {
-            self.declare(param);
+        for (param, index) in params {
+            self.declare(param, index.clone())?;
             self.define(param);
         }
 
@@ -174,10 +174,17 @@ impl Resolver<'_> {
         }
     }
 
-    fn declare(&mut self, name: &String) {
+    fn declare(&mut self, name: &String, index: usize) -> Result<(), ResolverError> {
         if let Some(scope) = self.scopes.first_mut() {
+            // already has the name
+            if let Some(_) = scope.get(name) {
+                return Err(ResolverError::VariableAlreadyDeclared(name.clone(), index));
+            }
+
             scope.insert(name.clone(), false);
         }
+
+        Ok(())
     }
 
     fn define(&mut self, name: &String) {
@@ -202,6 +209,10 @@ pub fn print_resolver_error(source: &String, err: ResolverError) {
         ResolverError::CantReadLocalVarInItsOwnInitializer(index) => (
             "can't read local variable in its own initialzer".to_string(),
             index.clone(),
+        ),
+        ResolverError::VariableAlreadyDeclared(name, index) => (
+            format!("there is already a variable named {name} declared in this scope"),
+            index,
         ),
     };
 

@@ -199,7 +199,7 @@ pub enum Expr {
     Variable(String, usize),
     Assignment(String, Box<Expr>, usize),
     Call(Box<Expr>, Vec<Box<Expr>>, usize),
-    Closure(Vec<String>, Vec<Stmt>, usize),
+    Closure(Vec<(String, usize)>, Vec<Stmt>, usize),
     Ternary(Box<Expr>, Box<Expr>, Box<Expr>, usize),
 }
 
@@ -222,16 +222,36 @@ impl Expr {
 
 #[derive(Debug, Clone)]
 pub enum Stmt {
-    Print(Box<Expr>),
+    Print(Box<Expr>, usize),
     Expr(Box<Expr>),
-    Var(String, Option<Box<Expr>>),
+    Var(String, Option<Box<Expr>>, usize),
     Block(Vec<Stmt>),
-    Func(String, Vec<String>, Vec<Stmt>),
-    If(Box<Expr>, Box<Stmt>, Option<Box<Stmt>>),
-    While(Box<Expr>, Box<Stmt>, Option<Box<Stmt>>),
+    Func(String, Vec<(String, usize)>, Vec<Stmt>, usize),
+    If(Box<Expr>, Box<Stmt>, Option<Box<Stmt>>, usize),
+    While(Box<Expr>, Box<Stmt>, Option<Box<Stmt>>, usize),
     Break(usize),
     Continue(usize),
     Return(Option<Box<Expr>>, usize),
+}
+
+impl Stmt {
+    pub fn stmt_index(&self) -> usize {
+        match self {
+            Stmt::Print(_, index) => index.clone(),
+            Stmt::Expr(expr) => expr.token_index(),
+            Stmt::Var(_, _, index) => index.clone(),
+            Stmt::Block(stmts) => stmts
+                .first()
+                .expect("tried to access empty block")
+                .stmt_index(),
+            Stmt::Func(_, _, _, index) => index.clone(),
+            Stmt::If(_, _, _, index) => index.clone(),
+            Stmt::While(_, _, _, index) => index.clone(),
+            Stmt::Break(index) => index.clone(),
+            Stmt::Continue(index) => index.clone(),
+            Stmt::Return(_, index) => index.clone(),
+        }
+    }
 }
 
 pub fn parse(tokens: Vec<(Token, usize)>) -> Result<Vec<Stmt>, Vec<ParserError>> {
@@ -306,6 +326,8 @@ impl Parser {
     }
 
     fn function(&mut self) -> Result<Stmt, ParserError> {
+        let fn_index = self.previous_index().unwrap();
+
         if let Some((name, _)) = self.consume_identifier() {
             let params = self.parameters(format!("function {name}"))?;
 
@@ -319,7 +341,7 @@ impl Parser {
 
             let body = self.block()?;
 
-            return Ok(Stmt::Func(name, params, body));
+            return Ok(Stmt::Func(name, params, body, fn_index));
         }
 
         Ok(Stmt::Expr(Box::new(self.function_expr()?)))
@@ -344,7 +366,7 @@ impl Parser {
         Ok(Expr::Closure(params, body, prev_index))
     }
 
-    fn parameters(&mut self, what: String) -> Result<Vec<String>, ParserError> {
+    fn parameters(&mut self, what: String) -> Result<Vec<(String, usize)>, ParserError> {
         if self.consume_isnt(Token::LParen) {
             let (_, index) = self.previous().unwrap();
             return Err(ParserError::ExpectedLParenAfter(what, index.clone()));
@@ -355,8 +377,8 @@ impl Parser {
         let (curr, _) = self.current().unwrap();
 
         if *curr != Token::RParen {
-            if let Some((name, _)) = self.consume_identifier() {
-                params.push(name.clone());
+            if let Some((name, index)) = self.consume_identifier() {
+                params.push((name, index));
             }
 
             while self.matches(&[Token::Comma]) {
@@ -364,7 +386,7 @@ impl Parser {
                     if params.len() >= 255 {
                         return Err(ParserError::MaximumArgsExceeded(index));
                     }
-                    params.push(name);
+                    params.push((name, index));
                 }
             }
         }
@@ -386,7 +408,11 @@ impl Parser {
             };
 
             if self.consume_is(Token::Semicolon) {
-                return Ok(Stmt::Var(name, initializer.map(|expr| Box::new(expr))));
+                return Ok(Stmt::Var(
+                    name,
+                    initializer.map(|expr| Box::new(expr)),
+                    index,
+                ));
             }
 
             // TODO: after var decl
@@ -464,6 +490,8 @@ impl Parser {
     }
 
     fn for_stmt(&mut self) -> Result<Stmt, ParserError> {
+        let for_index = self.previous_index().unwrap();
+
         if self.consume_isnt(Token::LParen) {
             let (_, index) = self.previous().unwrap();
             return Err(ParserError::ExpectedLParenAfter(
@@ -521,6 +549,7 @@ impl Parser {
             Box::new(body),
             // put incr into the "after" special block
             incr.map(|stmt| Box::new(Stmt::Expr(Box::new(stmt)))),
+            for_index,
         );
 
         // prepend initializer in front of while loop
@@ -532,6 +561,8 @@ impl Parser {
     }
 
     fn if_stmt(&mut self) -> Result<Stmt, ParserError> {
+        let if_index = self.previous_index().unwrap();
+
         if self.consume_is(Token::LParen) {
             let condition = self.expression()?;
 
@@ -547,6 +578,7 @@ impl Parser {
                     Box::new(condition),
                     Box::new(then_branch),
                     else_branch,
+                    if_index,
                 ));
             }
 
@@ -556,18 +588,16 @@ impl Parser {
             ));
         }
 
-        let (_, index) = self.previous().unwrap();
-        Err(ParserError::ExpectedLParenAfter(
-            "if".to_string(),
-            index.clone(),
-        ))
+        Err(ParserError::ExpectedLParenAfter("if".to_string(), if_index))
     }
 
     fn print_stmt(&mut self) -> Result<Stmt, ParserError> {
+        let print_index = self.previous_index().unwrap();
+
         let expr = self.expression()?;
 
         if self.consume_is(Token::Semicolon) {
-            Ok(Stmt::Print(Box::new(expr)))
+            Ok(Stmt::Print(Box::new(expr), print_index))
         } else {
             Err(ParserError::ExpectedSemicolonAfterStmt(expr.token_index()))
         }
@@ -593,6 +623,8 @@ impl Parser {
     }
 
     fn while_stmt(&mut self) -> Result<Stmt, ParserError> {
+        let while_index = self.previous_index().unwrap();
+
         if self.consume_is(Token::LParen) {
             let condition = self.expression()?;
 
@@ -601,7 +633,12 @@ impl Parser {
                 let body = self.statement()?;
                 self.loop_depth.pop().unwrap();
 
-                return Ok(Stmt::While(Box::new(condition), Box::new(body), None));
+                return Ok(Stmt::While(
+                    Box::new(condition),
+                    Box::new(body),
+                    None,
+                    while_index,
+                ));
             }
 
             return Err(ParserError::ExpectedRParenAfter(
@@ -917,6 +954,10 @@ impl Parser {
             .and_then(|index| self.tokens.get(index))
     }
 
+    fn previous_index(&self) -> Option<usize> {
+        self.previous().map(|(_, index)| index.clone())
+    }
+
     fn matches(&mut self, tokens: &[Token]) -> bool {
         for token in tokens {
             if self.is_at_end() {
@@ -989,7 +1030,7 @@ pub fn print_stmt(stmt: &Stmt, indent_level: usize, prefix: Option<String>) {
     let prefix = prefix.unwrap_or_default();
 
     match stmt {
-        Stmt::Print(expr) => {
+        Stmt::Print(expr, _) => {
             println!("{indent}{prefix}Print");
             print_expr(expr, indent_level + 1, None);
         }
@@ -997,7 +1038,7 @@ pub fn print_stmt(stmt: &Stmt, indent_level: usize, prefix: Option<String>) {
             println!("{indent}{prefix}Expr");
             print_expr(expr, indent_level + 1, None);
         }
-        Stmt::Var(name, expr) => {
+        Stmt::Var(name, expr, _) => {
             println!("{indent}{prefix}Set Var {name}");
 
             if let Some(expr) = expr {
@@ -1011,7 +1052,7 @@ pub fn print_stmt(stmt: &Stmt, indent_level: usize, prefix: Option<String>) {
                 print_stmt(stmt, indent_level + 1, None);
             }
         }
-        Stmt::If(expr, then_branch, else_branch) => {
+        Stmt::If(expr, then_branch, else_branch, _) => {
             println!("{indent}{prefix}If:");
 
             print_expr(expr, indent_level + 1, Some(String::from("Cond: ")));
@@ -1021,7 +1062,7 @@ pub fn print_stmt(stmt: &Stmt, indent_level: usize, prefix: Option<String>) {
                 print_stmt(else_branch, indent_level + 1, Some(String::from("Else: ")));
             }
         }
-        Stmt::While(condition, body, after) => {
+        Stmt::While(condition, body, after, _) => {
             println!("{indent}{prefix}While:");
 
             print_expr(condition, indent_level + 1, None);
@@ -1033,8 +1074,15 @@ pub fn print_stmt(stmt: &Stmt, indent_level: usize, prefix: Option<String>) {
         }
         Stmt::Break(_) => println!("{indent}BREAK"),
         Stmt::Continue(_) => println!("{indent}CONTINUE"),
-        Stmt::Func(name, params, body) => {
-            println!("{indent}{prefix}Func {name}({})", params.join(", "));
+        Stmt::Func(name, params, body, _) => {
+            println!(
+                "{indent}{prefix}Func {name}({})",
+                params
+                    .iter()
+                    .map(|(name, _)| name.as_str())
+                    .collect::<Vec<&str>>()
+                    .join(", ")
+            );
 
             for stmt in body {
                 print_stmt(stmt, indent_level + 1, None);
@@ -1095,7 +1143,14 @@ pub fn print_expr(expr: &Expr, indent_level: usize, prefix: Option<String>) {
             }
         }
         Expr::Closure(params, body, _) => {
-            println!("{indent}{prefix}Closure fun({})", params.join(", "));
+            println!(
+                "{indent}{prefix}Closure fun({})",
+                params
+                    .iter()
+                    .map(|(name, _)| name.as_str())
+                    .collect::<Vec<&str>>()
+                    .join(", ")
+            );
 
             for stmt in body {
                 print_stmt(stmt, indent_level + 1, None);

@@ -160,13 +160,13 @@ impl Interpreter {
 
     fn evaluate_stmt(&mut self, stmt: &Stmt, env: Rc<RefCell<Env>>) -> Result<Value, RuntimeError> {
         match stmt {
-            Stmt::Print(expr) => {
+            Stmt::Print(expr, _) => {
                 let value = self.evaluate_expr(expr, env)?;
                 println!("{}", value);
                 Ok(Value::Nil)
             }
             Stmt::Expr(expr) => self.evaluate_expr(expr, env),
-            Stmt::Var(name, expr) => {
+            Stmt::Var(name, expr, _) => {
                 let value = if let Some(expr) = expr {
                     Some(self.evaluate_expr(expr, env.clone())?)
                 } else {
@@ -181,7 +181,7 @@ impl Interpreter {
                 self.evaluate_block(stmts, env)?;
                 Ok(Value::Nil)
             }
-            Stmt::If(condition, then_branch, else_branch) => {
+            Stmt::If(condition, then_branch, else_branch, _) => {
                 let value = self.evaluate_expr(condition, env.clone())?;
 
                 if is_truthy(&value) {
@@ -192,7 +192,7 @@ impl Interpreter {
 
                 Ok(Value::Nil)
             }
-            Stmt::While(condition, body, after) => {
+            Stmt::While(condition, body, after, _) => {
                 loop {
                     let env = env.clone();
                     let value = self.evaluate_expr(condition, env.clone())?;
@@ -225,12 +225,12 @@ impl Interpreter {
                 ControlFlow::Continue,
                 index.clone(),
             )),
-            Stmt::Func(name, params, body) => {
+            Stmt::Func(name, params, body, _) => {
                 env.borrow_mut().define(
                     name,
                     Value::Func(Fn::LoxFunc(
                         Some(name.clone()),
-                        params.clone(),
+                        params.iter().map(|(name, _)| name.clone()).collect(),
                         body.clone(),
                         env.clone(),
                     )),
@@ -460,7 +460,7 @@ impl Interpreter {
             }
             Expr::Closure(params, body, _) => Ok(Value::Func(Fn::LoxFunc(
                 None,
-                params.clone(),
+                params.iter().map(|(name, _)| name.clone()).collect(),
                 body.clone(),
                 env,
             ))),
