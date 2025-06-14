@@ -306,10 +306,7 @@ impl Parser {
     }
 
     fn function(&mut self) -> Result<Stmt, ParserError> {
-        if let Some((Token::Identifier(name), _)) = self.consume(Token::Identifier("".to_string()))
-        {
-            let name = name.clone();
-
+        if let Some((name, _)) = self.consume_identifier() {
             let params = self.parameters(format!("function {name}"))?;
 
             if self.consume_isnt(Token::LBrace) {
@@ -358,20 +355,16 @@ impl Parser {
         let (curr, _) = self.current().unwrap();
 
         if *curr != Token::RParen {
-            if let Some((Token::Identifier(name), _)) =
-                self.consume(Token::Identifier("".to_string()))
-            {
+            if let Some((name, _)) = self.consume_identifier() {
                 params.push(name.clone());
             }
 
             while self.matches(&[Token::Comma]) {
-                if let Some((Token::Identifier(name), index)) =
-                    self.consume(Token::Identifier("".to_string()))
-                {
+                if let Some((name, index)) = self.consume_identifier() {
                     if params.len() >= 255 {
-                        return Err(ParserError::MaximumArgsExceeded(index.clone()));
+                        return Err(ParserError::MaximumArgsExceeded(index));
                     }
-                    params.push(name.clone());
+                    params.push(name);
                 }
             }
         }
@@ -385,19 +378,14 @@ impl Parser {
     }
 
     fn var_declaration(&mut self) -> Result<Stmt, ParserError> {
-        if let Some((Token::Identifier(name), index)) =
-            self.consume(Token::Identifier("".to_string()))
-        {
-            let name = name.clone();
-            let index = index.clone();
-
+        if let Some((name, index)) = self.consume_identifier() {
             let initializer = if self.matches(&[Token::Equal]) {
                 Some(self.expression()?)
             } else {
                 None
             };
 
-            if let Some(_) = self.consume(Token::Semicolon) {
+            if self.consume_is(Token::Semicolon) {
                 return Ok(Stmt::Var(name, initializer.map(|expr| Box::new(expr))));
             }
 
@@ -457,7 +445,7 @@ impl Parser {
             }
         }
 
-        if let Some(_) = self.consume(Token::RBrace) {
+        if self.consume_is(Token::RBrace) {
             return Ok(stmts);
         }
 
@@ -468,7 +456,7 @@ impl Parser {
     fn expr_stmt(&mut self) -> Result<Stmt, ParserError> {
         let expr = self.expression()?;
 
-        if let Some(_) = self.consume(Token::Semicolon) {
+        if self.consume_is(Token::Semicolon) {
             Ok(Stmt::Expr(Box::new(expr)))
         } else {
             Err(ParserError::ExpectedSemicolonAfterExpr(expr.token_index()))
@@ -544,10 +532,10 @@ impl Parser {
     }
 
     fn if_stmt(&mut self) -> Result<Stmt, ParserError> {
-        if let Some(_) = self.consume(Token::LParen) {
+        if self.consume_is(Token::LParen) {
             let condition = self.expression()?;
 
-            if let Some(_) = self.consume(Token::RParen) {
+            if self.consume_is(Token::RParen) {
                 let then_branch = self.statement()?;
                 let else_branch = if self.matches(&[Token::Else]) {
                     Some(Box::new(self.statement()?))
@@ -578,7 +566,7 @@ impl Parser {
     fn print_stmt(&mut self) -> Result<Stmt, ParserError> {
         let expr = self.expression()?;
 
-        if let Some(_) = self.consume(Token::Semicolon) {
+        if self.consume_is(Token::Semicolon) {
             Ok(Stmt::Print(Box::new(expr)))
         } else {
             Err(ParserError::ExpectedSemicolonAfterStmt(expr.token_index()))
@@ -605,10 +593,10 @@ impl Parser {
     }
 
     fn while_stmt(&mut self) -> Result<Stmt, ParserError> {
-        if let Some(_) = self.consume(Token::LParen) {
+        if self.consume_is(Token::LParen) {
             let condition = self.expression()?;
 
-            if let Some(_) = self.consume(Token::RParen) {
+            if self.consume_is(Token::RParen) {
                 self.loop_depth.push(());
                 let body = self.statement()?;
                 self.loop_depth.pop().unwrap();
@@ -839,7 +827,7 @@ impl Parser {
             return Ok(Expr::Literal(Value::Nil, *index));
         }
 
-        if let Some(_) = self.consume(Token::Fun) {
+        if self.consume_is(Token::Fun) {
             let expr = self.function_expr()?;
             return Ok(expr);
         }
@@ -866,10 +854,8 @@ impl Parser {
             }
         }
 
-        if let Some((Token::Identifier(name), index)) =
-            self.consume(Token::Identifier("".to_string()))
-        {
-            return Ok(Expr::Variable(name.clone(), index.clone()));
+        if let Some((name, index)) = self.consume_identifier() {
+            return Ok(Expr::Variable(name, index));
         }
 
         if self.matches(&[Token::LParen]) {
@@ -972,12 +958,21 @@ impl Parser {
         None
     }
 
-    fn consume_is(&mut self, token: Token) -> bool {
-        if let Some(_) = self.consume(token) {
-            true
-        } else {
-            false
+    fn consume_identifier(&mut self) -> Option<(String, usize)> {
+        if let Some((Token::Identifier(name), index)) = self.current() {
+            let name = name.clone();
+            let index = index.clone();
+
+            self.advance();
+
+            return Some((name, index));
         }
+
+        None
+    }
+
+    fn consume_is(&mut self, token: Token) -> bool {
+        self.consume(token).is_some()
     }
 
     fn consume_isnt(&mut self, token: Token) -> bool {
