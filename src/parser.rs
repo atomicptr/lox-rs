@@ -960,12 +960,14 @@ impl Parser {
 
     fn matches(&mut self, tokens: &[Token]) -> bool {
         for token in tokens {
+            assert!(!token.is_value_type(), "cant consume value types");
+
             if self.is_at_end() {
                 return false;
             }
 
             if let Some((current, _)) = self.current() {
-                if current.is_same_type(token) {
+                if current == token {
                     self.advance();
                     return true;
                 }
@@ -991,8 +993,10 @@ impl Parser {
     }
 
     fn consume(&mut self, token: Token) -> Option<&(Token, usize)> {
+        assert!(!token.is_value_type(), "cant consume value types");
+
         if let Some((current, _)) = self.current() {
-            if token.is_same_type(current) {
+            if token == *current {
                 return self.advance();
             }
         }
