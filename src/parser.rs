@@ -199,6 +199,7 @@ pub enum Expr {
     Assignment(String, Box<Expr>, usize),
     Call(Box<Expr>, Vec<Box<Expr>>, usize),
     Closure(Vec<String>, Vec<Stmt>, usize),
+    Ternary(Box<Expr>, Box<Expr>, Box<Expr>, usize),
 }
 
 impl Expr {
@@ -213,6 +214,7 @@ impl Expr {
             Expr::Logical(_, _, _, index) => index.clone(),
             Expr::Call(_, _, index) => index.clone(),
             Expr::Closure(_, _, index) => index.clone(),
+            Expr::Ternary(_, _, _, index) => index.clone(),
         }
     }
 }
@@ -630,7 +632,33 @@ impl Parser {
     }
 
     fn expression(&mut self) -> Result<Expr, ParserError> {
-        self.assignment()
+        self.ternary()
+    }
+
+    fn ternary(&mut self) -> Result<Expr, ParserError> {
+        let expr = self.assignment()?;
+
+        if self.matches(&[Token::QuestionMark]) {
+            let (_, qm_index) = self.previous().unwrap();
+            let qm_index = qm_index.clone();
+
+            let then_expr = self.expression()?;
+
+            if self.consume_isnt(Token::Colon) {
+                panic!("ternary needs :");
+            }
+
+            let else_expr = self.expression()?;
+
+            return Ok(Expr::Ternary(
+                Box::new(expr),
+                Box::new(then_expr),
+                Box::new(else_expr),
+                qm_index,
+            ));
+        }
+
+        Ok(expr)
     }
 
     fn assignment(&mut self) -> Result<Expr, ParserError> {
@@ -1074,6 +1102,13 @@ pub fn print_expr(expr: &Expr, indent_level: usize) {
             for stmt in body {
                 print_stmt(stmt, indent_level + 1);
             }
+        }
+        Expr::Ternary(condition, then_expr, else_expr, _) => {
+            println!("{indent}Ternary:");
+
+            print_expr(&condition, indent_level + 1);
+            print_expr(&then_expr, indent_level + 1);
+            print_expr(&else_expr, indent_level + 1);
         }
     }
 }

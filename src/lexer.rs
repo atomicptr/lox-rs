@@ -42,6 +42,8 @@ pub enum Token {
     Eof,
     Break,
     Continue,
+    QuestionMark,
+    Colon,
 }
 
 impl Token {
@@ -87,6 +89,8 @@ impl Token {
             (Token::Eof, Token::Eof) => true,
             (Token::Break, Token::Break) => true,
             (Token::Continue, Token::Continue) => true,
+            (Token::QuestionMark, Token::QuestionMark) => true,
+            (Token::Colon, Token::Colon) => true,
             _ => false,
         }
     }
@@ -120,6 +124,8 @@ pub fn lexer(source: &str) -> Result<Vec<(Token, usize)>, LexerError> {
             '+' => Some((Token::Plus, current)),
             ';' => Some((Token::Semicolon, current)),
             '*' => Some((Token::Star, current)),
+            '?' => Some((Token::QuestionMark, current)),
+            ':' => Some((Token::Colon, current)),
             '!' => {
                 if let Some(c) = data.get(current + 1) {
                     match c {

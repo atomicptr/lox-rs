@@ -425,6 +425,15 @@ impl Interpreter {
                 body.clone(),
                 env,
             ))),
+            Expr::Ternary(condition, then_expr, else_expr, _) => {
+                let cond = self.evaluate_expr(&condition, env.clone())?;
+
+                if is_truthy(&cond) {
+                    return Ok(self.evaluate_expr(then_expr, env)?);
+                }
+
+                Ok(self.evaluate_expr(else_expr, env)?)
+            }
         }
     }
 
