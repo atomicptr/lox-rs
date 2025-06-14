@@ -995,120 +995,126 @@ impl Parser {
     }
 }
 
-pub fn print_stmt(stmt: &Stmt, indent_level: usize) {
+pub fn print_stmt(stmt: &Stmt, indent_level: usize, prefix: Option<String>) {
     let indent = " ".repeat(indent_level * 4);
+    let prefix = prefix.unwrap_or_default();
 
     match stmt {
         Stmt::Print(expr) => {
-            println!("{indent}Print");
-            print_expr(expr, indent_level + 1);
+            println!("{indent}{prefix}Print");
+            print_expr(expr, indent_level + 1, None);
         }
         Stmt::Expr(expr) => {
-            println!("{indent}Expr");
-            print_expr(expr, indent_level + 1);
+            println!("{indent}{prefix}Expr");
+            print_expr(expr, indent_level + 1, None);
         }
         Stmt::Var(name, expr) => {
-            println!("{indent}Set var '{name}':");
-            print_expr(expr, indent_level + 1);
+            println!("{indent}{prefix}Set Var '{name}':");
+            print_expr(expr, indent_level + 1, None);
         }
         Stmt::Block(stmts) => {
-            println!("{indent}Block:");
+            println!("{indent}{prefix}Block:");
 
             for stmt in stmts.iter() {
-                print_stmt(stmt, indent_level + 1);
+                print_stmt(stmt, indent_level + 1, None);
             }
         }
         Stmt::If(expr, then_branch, else_branch) => {
-            println!("{indent}If:");
+            println!("{indent}{prefix}If:");
 
-            print_expr(expr, indent_level + 1);
-            print_stmt(then_branch, indent_level + 1);
+            print_expr(expr, indent_level + 1, Some(String::from("Cond: ")));
+            print_stmt(then_branch, indent_level + 1, Some(String::from("Then: ")));
 
             if let Some(else_branch) = else_branch {
-                print_stmt(else_branch, indent_level + 1);
+                print_stmt(else_branch, indent_level + 1, Some(String::from("Else: ")));
             }
         }
         Stmt::While(condition, body, after) => {
-            println!("{indent}While:");
+            println!("{indent}{prefix}While:");
 
-            print_expr(condition, indent_level + 1);
-            print_stmt(body, indent_level + 1);
+            print_expr(condition, indent_level + 1, None);
+            print_stmt(body, indent_level + 1, None);
 
             if let Some(after) = after {
-                print_stmt(after, indent_level + 1);
+                print_stmt(after, indent_level + 1, None);
             }
         }
         Stmt::Break(_) => println!("{indent}BREAK"),
         Stmt::Continue(_) => println!("{indent}CONTINUE"),
         Stmt::Func(name, params, body) => {
-            println!("{indent}Func {name}({})", params.join(", "));
+            println!("{indent}{prefix}Func {name}({})", params.join(", "));
 
             for stmt in body {
-                print_stmt(stmt, indent_level + 1);
+                print_stmt(stmt, indent_level + 1, None);
             }
         }
         Stmt::Return(expr, _) => {
-            println!("{indent}Return");
+            println!("{indent}{prefix}Return");
 
             if let Some(expr) = expr {
-                print_expr(expr, indent_level + 1);
+                print_expr(expr, indent_level + 1, None);
             }
         }
     };
 }
 
-pub fn print_expr(expr: &Expr, indent_level: usize) {
+pub fn print_expr(expr: &Expr, indent_level: usize, prefix: Option<String>) {
     let indent = " ".repeat(indent_level * 4);
+    let prefix = prefix.unwrap_or_default();
 
     match expr {
         Expr::Binary(left, op, right, _) => {
-            println!("{indent}Binary (Operator: {:?})", op);
-            print_expr(left, indent_level + 1);
-            print_expr(right, indent_level + 1);
+            println!("{indent}{prefix}Binary (Operator: {:?})", op);
+            print_expr(left, indent_level + 1, None);
+            print_expr(right, indent_level + 1, None);
         }
         Expr::Grouping(inner_expr, _) => {
-            println!("{indent}Group:");
-            print_expr(inner_expr, indent_level + 1);
+            println!("{indent}{prefix}Group:");
+            print_expr(inner_expr, indent_level + 1, None);
         }
         Expr::Unary(op, expr, _) => {
-            println!("{indent}Unary: (Operator {:?})", op);
-            print_expr(expr, indent_level + 1);
+            println!("{indent}{prefix}Unary: (Operator {:?})", op);
+            print_expr(expr, indent_level + 1, None);
         }
         Expr::Literal(value, _) => match value {
-            Value::String(s) => println!("{indent}Literal (String) = {s}"),
-            Value::Number(n) => println!("{indent}Literal (Number) = {n}"),
-            Value::Bool(b) => println!("{indent}Literal (Bool) = {b}"),
-            Value::Func(fun) => println!("{indent}Literal (Func) = {fun}"),
-            Value::Nil => println!("{indent}Literal (Nil)"),
+            Value::String(s) => println!("{indent}{prefix}String = {s}"),
+            Value::Number(n) => println!("{indent}{prefix}Number = {n}"),
+            Value::Bool(b) => {
+                println!("{indent}{prefix}Bool = {b}")
+            }
+            Value::Func(fun) => println!("{indent}{prefix}Func = {fun}"),
+            Value::Nil => println!("{indent}{prefix}Nil"),
         },
-        Expr::Variable(name, _) => println!("{indent}var {name}"),
-        Expr::Assignment(name, expr, _) => println!("{indent}assign var {name} = {:?}", expr),
+        Expr::Variable(name, _) => println!("{indent}{prefix}Var {name}"),
+        Expr::Assignment(name, expr, _) => {
+            println!("{indent}{prefix}assign var {name} = {:?}", expr)
+        }
         Expr::Logical(lhs, op, rhs, _) => {
-            println!("{indent}Logical (Operator {:?})", op);
-            print_expr(lhs, indent_level + 1);
-            print_expr(rhs, indent_level + 1);
+            println!("{indent}{prefix}Logical (Operator {:?})", op);
+            print_expr(lhs, indent_level + 1, None);
+            print_expr(rhs, indent_level + 1, None);
         }
         Expr::Call(callee, args, _) => {
-            println!("{indent}Call Func");
-            print_expr(callee, indent_level + 1);
+            println!("{indent}{prefix}Call Func");
+            print_expr(callee, indent_level + 1, None);
 
             for arg in args {
-                print_expr(arg, indent_level + 2);
+                print_expr(arg, indent_level + 2, None);
             }
         }
         Expr::Closure(params, body, _) => {
-            println!("{indent}Closure fun({})", params.join(", "));
+            println!("{indent}{prefix}Closure fun({})", params.join(", "));
 
             for stmt in body {
-                print_stmt(stmt, indent_level + 1);
+                print_stmt(stmt, indent_level + 1, None);
             }
         }
         Expr::Ternary(condition, then_expr, else_expr, _) => {
-            println!("{indent}Ternary:");
+            println!("{indent}{prefix}Ternary:");
 
-            print_expr(&condition, indent_level + 1);
-            print_expr(&then_expr, indent_level + 1);
-            print_expr(&else_expr, indent_level + 1);
+            print_expr(&condition, indent_level + 1, Some(String::from("Cond: ")));
+            print_expr(&then_expr, indent_level + 1, Some(String::from("Then: ")));
+            print_expr(&else_expr, indent_level + 1, Some(String::from("Else: ")));
         }
     }
 }

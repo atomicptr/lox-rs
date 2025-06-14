@@ -104,7 +104,7 @@ fn run(interpreter: &mut Interpreter, code: &String) -> Result<Value, LoxError> 
     let stmts = parser::parse(tokens)?;
 
     // for stmt in stmts.iter() {
-    //     print_stmt(stmt, 0);
+    //     print_stmt(stmt, 0, None);
     // }
 
     Ok(interpreter.run(&stmts)?)
