@@ -10,6 +10,7 @@ use parser::Value;
 
 use crate::{
     errormsg::{LoxError, handle_lox_error},
+    parser::print_stmt,
     resolver::resolve,
 };
 
@@ -74,11 +75,13 @@ fn run_file(file: &String) {
 fn run(interpreter: &mut Interpreter, code: &String) -> Result<Value, LoxError> {
     let tokens = lexer(&code)?;
 
+    println!("Tokens {:?}", tokens);
+
     let stmts = parser::parse(tokens)?;
 
-    // for stmt in stmts.iter() {
-    //     print_stmt(stmt, 0, None);
-    // }
+    for stmt in stmts.iter() {
+        print_stmt(stmt, 0, None);
+    }
 
     resolve(interpreter, &stmts)?;
 

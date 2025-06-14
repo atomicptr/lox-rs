@@ -101,6 +101,11 @@ impl Resolver<'_> {
             }
             Stmt::Break(_) => Ok(()),
             Stmt::Continue(_) => Ok(()),
+            Stmt::Class(name, _, index) => {
+                self.declare(name, index.clone())?;
+                self.define(name, index.clone());
+                Ok(())
+            }
         }
     }
 

@@ -249,6 +249,10 @@ impl Interpreter {
                     index.clone(),
                 ))
             }
+            Stmt::Class(name, _methods, _) => {
+                env.borrow_mut().define(name, Value::Class(name.clone()));
+                Ok(Value::Nil)
+            }
         }
     }
 

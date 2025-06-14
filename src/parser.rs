@@ -12,6 +12,7 @@ pub enum Value {
     Number(f64),
     Bool(bool),
     Func(Fn),
+    Class(String),
     Nil,
 }
 
@@ -22,6 +23,7 @@ impl Display for Value {
             Value::Number(n) => format!("{n}"),
             Value::Bool(b) => format!("{b}"),
             Value::Func(fun) => format!("{fun}"),
+            Value::Class(name) => format!("<class {name}>"),
             Value::Nil => "nil".to_string(),
         };
 
@@ -232,6 +234,7 @@ pub enum Stmt {
     Break(usize),
     Continue(usize),
     Return(Option<Box<Expr>>, usize),
+    Class(String, Vec<Stmt>, usize),
 }
 
 impl Stmt {
@@ -250,6 +253,7 @@ impl Stmt {
             Stmt::Break(index) => index.clone(),
             Stmt::Continue(index) => index.clone(),
             Stmt::Return(_, index) => index.clone(),
+            Stmt::Class(_, _, index) => index.clone(),
         }
     }
 }
@@ -280,6 +284,7 @@ pub enum ParserError {
     ExpectedSemicolonAfterLoopCondition(usize),
     MaximumArgsExceeded(usize),
     ExpectedLBraceBeforeBody(String, usize),
+    ExpectedName(String, usize),
 }
 
 impl Parser {
@@ -316,13 +321,44 @@ impl Parser {
     }
 
     fn declaration(&mut self) -> Result<Stmt, ParserError> {
-        if self.matches(&[Token::Fun]) {
+        if self.matches(&[Token::Class]) {
+            self.class()
+        } else if self.matches(&[Token::Fun]) {
             self.function()
         } else if self.matches(&[Token::Var]) {
             self.var_declaration()
         } else {
             self.statement()
         }
+    }
+
+    fn class(&mut self) -> Result<Stmt, ParserError> {
+        let class_index = self.previous_index().unwrap();
+
+        if let Some((name, index)) = self.consume_identifier() {
+            if self.consume_isnt(Token::LBrace) {
+                return Err(ParserError::ExpectedLBraceBeforeBody(
+                    format!("class {name}"),
+                    index,
+                ));
+            }
+
+            let mut methods = vec![];
+
+            // parse body
+            while !self.current_is(Token::RBrace) {
+                let method = self.function()?;
+                methods.push(method);
+            }
+
+            if self.consume_isnt(Token::RBrace) {
+                return Err(ParserError::ExpectedRBraceAfterBlock(index.clone()));
+            }
+
+            return Ok(Stmt::Class(name, methods, class_index));
+        }
+
+        Err(ParserError::ExpectedName("class".to_string(), class_index))
     }
 
     fn function(&mut self) -> Result<Stmt, ParserError> {
@@ -985,6 +1021,20 @@ impl Parser {
         return false;
     }
 
+    fn current_is(&self, token: Token) -> bool {
+        assert!(!token.is_value_type(), "cant test against value types");
+
+        if self.is_at_end() {
+            return false;
+        }
+
+        if let Some((curr, _)) = self.current() {
+            return *curr == token;
+        }
+
+        return false;
+    }
+
     fn advance(&mut self) -> Option<&(Token, usize)> {
         if !self.is_at_end() {
             self.index += 1;
@@ -1099,6 +1149,13 @@ pub fn print_stmt(stmt: &Stmt, indent_level: usize, prefix: Option<String>) {
                 print_expr(expr, indent_level + 1, None);
             }
         }
+        Stmt::Class(name, methods, _) => {
+            println!("{indent}{prefix}Class {name}");
+
+            for m in methods {
+                print_stmt(m, indent_level + 1, Some(String::from("Method: ")));
+            }
+        }
     };
 }
 
@@ -1126,7 +1183,8 @@ pub fn print_expr(expr: &Expr, indent_level: usize, prefix: Option<String>) {
             Value::Bool(b) => {
                 println!("{indent}{prefix}Bool = {b}")
             }
-            Value::Func(fun) => println!("{indent}{prefix}Func = {fun}"),
+            Value::Func(fun) => println!("{indent}{prefix}func {fun}"),
+            Value::Class(name) => println!("{indent}{prefix}class {name}"),
             Value::Nil => println!("{indent}{prefix}Nil"),
         },
         Expr::Variable(name, _) => println!("{indent}{prefix}Var {name}"),
@@ -1206,6 +1264,7 @@ pub fn print_parser_error(source: &String, err: &ParserError) {
         ParserError::ExpectedLBraceBeforeBody(what, index) => {
             (format!("expected '{{' before {what} body"), index)
         }
+        ParserError::ExpectedName(what, index) => (format!("expected {what} name"), index),
     };
 
     print_error_at(source, index.clone(), message.as_str());

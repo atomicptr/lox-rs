@@ -21,7 +21,7 @@ pub fn lox_tostring(index: usize, args: &Vec<Value>) -> Result<Value, RuntimeErr
         Value::String(s) => Ok(Value::String(s)),
         Value::Number(n) => Ok(Value::String(format!("{n}"))),
         Value::Bool(b) => Ok(Value::String(format!("{b}"))),
-        Value::Func(_) => Err(RuntimeError::CantConvertValue(
+        Value::Func(_) | Value::Class(_) => Err(RuntimeError::CantConvertValue(
             value,
             "String".to_string(),
             index,
