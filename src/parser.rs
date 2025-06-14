@@ -1,6 +1,7 @@
 use std::{cell::RefCell, fmt::Display, rc::Rc};
 
 use crate::{
+    errormsg::print_error_at,
     interpreter::{Env, RuntimeError},
     lexer::Token,
 };
@@ -223,7 +224,7 @@ impl Expr {
 pub enum Stmt {
     Print(Box<Expr>),
     Expr(Box<Expr>),
-    Var(String, Box<Expr>),
+    Var(String, Option<Box<Expr>>),
     Block(Vec<Stmt>),
     Func(String, Vec<String>, Vec<Stmt>),
     If(Box<Expr>, Box<Stmt>, Option<Box<Stmt>>),
@@ -397,10 +398,7 @@ impl Parser {
             };
 
             if let Some(_) = self.consume(Token::Semicolon) {
-                return Ok(Stmt::Var(
-                    name,
-                    Box::new(initializer.unwrap_or(Expr::Literal(Value::Nil, index.clone()))),
-                ));
+                return Ok(Stmt::Var(name, initializer.map(|expr| Box::new(expr))));
             }
 
             // TODO: after var decl
@@ -868,14 +866,10 @@ impl Parser {
             }
         }
 
-        if self.matches(&[Token::Identifier("".to_string())]) {
-            let (token, index) = self.previous().unwrap();
-
-            if let Token::Identifier(name) = token {
-                return Ok(Expr::Variable(name.clone(), index.clone()));
-            }
-
-            panic!("this should not happen");
+        if let Some((Token::Identifier(name), index)) =
+            self.consume(Token::Identifier("".to_string()))
+        {
+            return Ok(Expr::Variable(name.clone(), index.clone()));
         }
 
         if self.matches(&[Token::LParen]) {
@@ -1009,8 +1003,11 @@ pub fn print_stmt(stmt: &Stmt, indent_level: usize, prefix: Option<String>) {
             print_expr(expr, indent_level + 1, None);
         }
         Stmt::Var(name, expr) => {
-            println!("{indent}{prefix}Set Var '{name}':");
-            print_expr(expr, indent_level + 1, None);
+            println!("{indent}{prefix}Set Var {name}");
+
+            if let Some(expr) = expr {
+                print_expr(expr, indent_level + 1, None);
+            }
         }
         Stmt::Block(stmts) => {
             println!("{indent}{prefix}Block:");
@@ -1119,7 +1116,43 @@ pub fn print_expr(expr: &Expr, indent_level: usize, prefix: Option<String>) {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+pub fn print_parser_error(source: &String, err: &ParserError) {
+    let (message, index) = match err {
+        ParserError::UnexpectedToken(token, index) => {
+            (format!("unexpected token '{:?}'", token), index)
+        }
+        ParserError::CouldntFindRParen(index) => {
+            ("could not find ')' after expression.".to_string(), index)
+        }
+        ParserError::ExpectedExpression(index) => ("expected expression".to_string(), index),
+        ParserError::ExpectedSemicolonAfterStmt(index) => {
+            ("expected ';' after statement".to_string(), index)
+        }
+        ParserError::ExpectedSemicolonAfterExpr(index) => {
+            ("expected ';' after expression".to_string(), index)
+        }
+        ParserError::InvalidAssignmentTarget(index) => {
+            ("invalid assignment target".to_string(), index)
+        }
+        ParserError::ExpectedRBraceAfterBlock(index) => {
+            ("expected '}' after block".to_string(), index)
+        }
+        ParserError::ExpectedLParenAfter(what, index) => {
+            (format!("expected '(' after '{what}'"), index)
+        }
+        ParserError::ExpectedRParenAfter(what, index) => {
+            (format!("expected ')' after '{what}'"), index)
+        }
+        ParserError::ExpectedSemicolonAfterLoopCondition(index) => {
+            ("expected ';' after loop condition".to_string(), index)
+        }
+        ParserError::MaximumArgsExceeded(index) => {
+            ("can't have more than 255 arguments".to_string(), index)
+        }
+        ParserError::ExpectedLBraceBeforeBody(what, index) => {
+            (format!("expected '{{' before {what} body"), index)
+        }
+    };
+
+    print_error_at(source, index.clone(), message.as_str());
 }

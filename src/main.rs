@@ -4,16 +4,21 @@ use std::{
     process::exit,
 };
 
-use errormsg::{print_lexer_error, print_parser_error, print_runtime_error};
-use interpreter::{Interpreter, RuntimeError};
-use lexer::{LexerError, lexer};
-use parser::{ParserError, Value, print_stmt};
+use interpreter::Interpreter;
+use lexer::lexer;
+use parser::Value;
+
+use crate::{
+    errormsg::{LoxError, handle_lox_error},
+    resolver::resolve,
+};
 
 mod builtins;
 mod errormsg;
 mod interpreter;
 mod lexer;
 mod parser;
+mod resolver;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -50,11 +55,7 @@ fn run_prompt() {
 
         match run(&mut interpreter, &s) {
             Ok(val) => println!("{}", val),
-            Err(LoxError::LexerError(err)) => print_lexer_error(&s, err),
-            Err(LoxError::ParserErrors(errs)) => {
-                errs.iter().for_each(|err| print_parser_error(&s, err))
-            }
-            Err(LoxError::InterpreterError(err)) => print_runtime_error(&s, err),
+            Err(err) => handle_lox_error(&s, err),
         }
     }
 }
@@ -66,35 +67,7 @@ fn run_file(file: &String) {
 
     match run(&mut interpreter, &source) {
         Ok(_) => {}
-        Err(LoxError::LexerError(err)) => print_lexer_error(&source, err),
-        Err(LoxError::ParserErrors(errs)) => {
-            errs.iter().for_each(|err| print_parser_error(&source, err))
-        }
-        Err(LoxError::InterpreterError(err)) => print_runtime_error(&source, err),
-    }
-}
-
-enum LoxError {
-    LexerError(LexerError),
-    ParserErrors(Vec<ParserError>),
-    InterpreterError(RuntimeError),
-}
-
-impl From<LexerError> for LoxError {
-    fn from(value: LexerError) -> Self {
-        LoxError::LexerError(value)
-    }
-}
-
-impl From<Vec<ParserError>> for LoxError {
-    fn from(value: Vec<ParserError>) -> Self {
-        LoxError::ParserErrors(value)
-    }
-}
-
-impl From<RuntimeError> for LoxError {
-    fn from(value: RuntimeError) -> Self {
-        LoxError::InterpreterError(value)
+        Err(err) => handle_lox_error(&source, err),
     }
 }
 
@@ -106,6 +79,8 @@ fn run(interpreter: &mut Interpreter, code: &String) -> Result<Value, LoxError> 
     // for stmt in stmts.iter() {
     //     print_stmt(stmt, 0, None);
     // }
+
+    resolve(interpreter, &stmts)?;
 
     Ok(interpreter.run(&stmts)?)
 }

@@ -2,6 +2,7 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::{
     builtins::{lox_assert, lox_panic, lox_time, lox_tostring},
+    errormsg::print_error_at,
     parser::{BinaryOp, Expr, Fn, LogicalOp, Stmt, UnaryOp, Value},
 };
 
@@ -13,14 +14,20 @@ pub struct Env {
 }
 
 impl Env {
-    pub fn get_var(&self, name: &String) -> Option<Value> {
-        if let Some(value) = self.vars.get(name) {
-            return Some(value.clone());
-        }
-
-        match &self.parent {
-            Some(env) => env.borrow().get_var(name),
-            None => None,
+    pub fn lookup(&self, name: &String, distance: Option<usize>) -> Option<Value> {
+        match distance {
+            Some(0) => self.vars.get(name).map(|v| v.clone()),
+            Some(n) => self.lookup(name, Some(n.checked_sub(1).unwrap())),
+            None => {
+                // None means we only apply this to the toplevel
+                if self.is_toplevel() {
+                    self.lookup(name, Some(0))
+                } else if let Some(parent) = &self.parent {
+                    parent.borrow().lookup(name, None)
+                } else {
+                    None
+                }
+            }
         }
     }
 
@@ -33,23 +40,41 @@ impl Env {
         name: &String,
         value: Value,
         index: &usize,
+        dist: Option<usize>,
     ) -> Result<(), RuntimeError> {
         if self.is_builtin_env {
             return Err(RuntimeError::CantModifyBuiltins(index.clone()));
         }
 
-        // if the var exists in our scope
-        if let Some(_) = self.vars.get(name) {
-            self.vars.insert(name.clone(), value);
-            return Ok(());
-        }
+        match dist {
+            Some(0) => {
+                if let Some(_) = self.vars.get(name) {
+                    self.vars.insert(name.clone(), value);
+                    return Ok(());
+                }
 
-        // if var exists in parent env, assign there
-        if let Some(env) = &mut self.parent {
-            return env.borrow_mut().assign(name, value, index);
+                Err(RuntimeError::UnknownVariable(name.clone(), index.clone()))
+            }
+            Some(n) => self.assign(name, value, index, Some(n - 1)),
+            None => {
+                // None means we only apply this to the toplevel
+                if self.is_toplevel() {
+                    self.assign(name, value, index, Some(0))
+                } else {
+                    let parent = self.parent.clone().unwrap();
+                    parent.borrow_mut().assign(name, value, index, None)
+                }
+            }
         }
+    }
 
-        Err(RuntimeError::UnknownVariable(name.clone(), index.clone()))
+    fn is_toplevel(&self) -> bool {
+        // top level scope is the env that is right below the builtin env
+        match &self.parent {
+            Some(env) => env.borrow().is_builtin_env,
+            None => false, // the only env without parent is builtin which by definition isnt
+                           // the toplevel one
+        }
     }
 
     pub fn create_child(parent_env: Rc<RefCell<Env>>) -> Rc<RefCell<Env>> {
@@ -86,6 +111,7 @@ pub enum ControlFlow {
 #[derive(Debug)]
 pub struct Interpreter {
     env: Rc<RefCell<Env>>,
+    locals: HashMap<usize, usize>,
 }
 
 impl Default for Interpreter {
@@ -113,6 +139,7 @@ impl Default for Interpreter {
 
         Self {
             env: Env::create_child(Rc::new(RefCell::new(builtins))),
+            locals: HashMap::new(),
         }
     }
 }
@@ -124,6 +151,9 @@ impl Interpreter {
         for stmt in stmts.iter() {
             value = self.evaluate_stmt(stmt, self.env.clone())?;
         }
+
+        // clear locals after using
+        self.locals.clear();
 
         Ok(value)
     }
@@ -137,8 +167,14 @@ impl Interpreter {
             }
             Stmt::Expr(expr) => self.evaluate_expr(expr, env),
             Stmt::Var(name, expr) => {
-                let value = self.evaluate_expr(expr, env.clone())?;
-                env.borrow_mut().define(name, value);
+                let value = if let Some(expr) = expr {
+                    Some(self.evaluate_expr(expr, env.clone())?)
+                } else {
+                    None
+                };
+
+                env.borrow_mut().define(name, value.unwrap_or(Value::Nil));
+
                 Ok(Value::Nil)
             }
             Stmt::Block(stmts) => {
@@ -358,16 +394,19 @@ impl Interpreter {
                     (UnaryOp::Not, value) => Ok(Value::Bool(!is_truthy(&value))),
                 }
             }
-            Expr::Variable(name, index) => match env.borrow().get_var(name) {
-                Some(value) => Ok(value.clone()),
-                None => Err(RuntimeError::UnknownVariable(name.clone(), index.clone())),
-            },
+            Expr::Variable(name, index) => {
+                match env.borrow().lookup(name, self.expr_distance(expr)) {
+                    Some(value) => Ok(value.clone()),
+                    None => Err(RuntimeError::UnknownVariable(name.clone(), index.clone())),
+                }
+            }
             Expr::Assignment(name, expr, index) => {
-                let var = env.borrow().get_var(name);
+                let dist = self.expr_distance(expr);
+                let var = env.borrow().lookup(name, dist.clone());
                 match var {
                     Some(_) => {
                         let value = self.evaluate_expr(expr, env.clone())?;
-                        env.borrow_mut().assign(name, value.clone(), index)?;
+                        env.borrow_mut().assign(name, value.clone(), index, dist)?;
                         Ok(value)
                     }
                     None => Err(RuntimeError::UnknownVariable(name.clone(), index.clone())),
@@ -467,6 +506,12 @@ impl Interpreter {
         }
     }
 
+    fn expr_distance(&self, expr: &Expr) -> Option<usize> {
+        self.locals
+            .get(&expr.token_index())
+            .map(|dist| dist.clone())
+    }
+
     fn evaluate_block(
         &mut self,
         stmts: &Vec<Stmt>,
@@ -480,6 +525,10 @@ impl Interpreter {
 
         Ok(())
     }
+
+    pub fn resolve(&mut self, expr: &Expr, depth: usize) {
+        self.locals.insert(expr.token_index(), depth);
+    }
 }
 
 pub fn is_truthy(value: &Value) -> bool {
@@ -492,4 +541,46 @@ pub fn is_truthy(value: &Value) -> bool {
 
 fn f64_equals(a: &f64, b: &f64) -> bool {
     (a - b).abs() <= f64::EPSILON
+}
+
+pub fn print_runtime_error(source: &String, err: RuntimeError) {
+    let (message, index) = match err {
+        RuntimeError::BinaryOpUnaryTypeError(value, op, index) => (
+            format!("operator '{op}' can't be used with '{:?}'", value),
+            index,
+        ),
+        RuntimeError::BinaryOpTyperError(lhs, op, rhs, index) => (
+            format!(
+                "operator '{op}' for '{:?}' and '{:?}' is not allowed",
+                lhs, rhs
+            ),
+            index,
+        ),
+        RuntimeError::UnaryOpTypeError(value, op, index) => (
+            format!("unary operator '{op}' can not be used with {:?}", value),
+            index,
+        ),
+        RuntimeError::DivByZero(index) => ("division by zero".to_string(), index),
+        RuntimeError::UnknownVariable(name, index) => (format!("unknown variable '{name}'"), index),
+        RuntimeError::ControlFlow(cf, index) => {
+            (format!("illegal control flow statement '{:?}'", cf), index)
+        }
+        RuntimeError::NotCallable(index) => ("expression is not callable".to_string(), index),
+        RuntimeError::FnInvalidNumberOfArguments(expected, got, index) => (
+            format!(
+                "invalid number of arguments passed to function, expected {expected} parameters but received {got} parameters instead"
+            ),
+            index,
+        ),
+        RuntimeError::CantModifyBuiltins(index) => ("can't modify builtins".to_string(), index),
+        RuntimeError::CantConvertValue(value, to, index) => {
+            (format!("can't convert {:?} to {to}", value), index)
+        }
+        RuntimeError::AssertionFailed(message, index) => {
+            (format!("assertion failed: {message}"), index)
+        }
+        RuntimeError::Panic(message, index) => (format!("PANIC: {message}"), index),
+    };
+
+    print_error_at(source, index, message.as_str());
 }

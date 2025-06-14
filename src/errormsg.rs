@@ -1,4 +1,40 @@
-use crate::{interpreter::RuntimeError, lexer::LexerError, parser::ParserError};
+use crate::{
+    interpreter::{RuntimeError, print_runtime_error},
+    lexer::{LexerError, print_lexer_error},
+    parser::{ParserError, print_parser_error},
+    resolver::{ResolverError, print_resolver_error},
+};
+
+pub enum LoxError {
+    LexerError(LexerError),
+    ParserErrors(Vec<ParserError>),
+    ResolverError(ResolverError),
+    RuntimeError(RuntimeError),
+}
+
+impl From<LexerError> for LoxError {
+    fn from(value: LexerError) -> Self {
+        LoxError::LexerError(value)
+    }
+}
+
+impl From<Vec<ParserError>> for LoxError {
+    fn from(value: Vec<ParserError>) -> Self {
+        LoxError::ParserErrors(value)
+    }
+}
+
+impl From<ResolverError> for LoxError {
+    fn from(value: ResolverError) -> Self {
+        LoxError::ResolverError(value)
+    }
+}
+
+impl From<RuntimeError> for LoxError {
+    fn from(value: RuntimeError) -> Self {
+        LoxError::RuntimeError(value)
+    }
+}
 
 fn pos_from_index(source: &str, index: usize) -> Option<(usize, usize)> {
     let mut line = 0;
@@ -52,101 +88,15 @@ fn print_annotated_line(
     }
 }
 
-pub fn print_lexer_error(source: &String, err: LexerError) {
-    let (message, index) = match err {
-        LexerError::UnexpectedCharacter(c, index) => (format!("unexpected character {c}"), index),
-        LexerError::UnterminatedString(index) => ("unterminated string".to_string(), index),
-        LexerError::TrailingDot(index) => ("trailing dot".to_string(), index),
-        LexerError::CouldNotParseNumber(str, err, index) => (
-            format!("could not parse '{str}' into number: {:?}", err),
-            index,
-        ),
-    };
-
-    print_error_at(source, index, message.as_str());
-}
-
-pub fn print_parser_error(source: &String, err: &ParserError) {
-    let (message, index) = match err {
-        ParserError::UnexpectedToken(token, index) => {
-            (format!("unexpected token '{:?}'", token), index)
-        }
-        ParserError::CouldntFindRParen(index) => {
-            ("could not find ')' after expression.".to_string(), index)
-        }
-        ParserError::ExpectedExpression(index) => ("expected expression".to_string(), index),
-        ParserError::ExpectedSemicolonAfterStmt(index) => {
-            ("expected ';' after statement".to_string(), index)
-        }
-        ParserError::ExpectedSemicolonAfterExpr(index) => {
-            ("expected ';' after expression".to_string(), index)
-        }
-        ParserError::InvalidAssignmentTarget(index) => {
-            ("invalid assignment target".to_string(), index)
-        }
-        ParserError::ExpectedRBraceAfterBlock(index) => {
-            ("expected '}' after block".to_string(), index)
-        }
-        ParserError::ExpectedLParenAfter(what, index) => {
-            (format!("expected '(' after '{what}'"), index)
-        }
-        ParserError::ExpectedRParenAfter(what, index) => {
-            (format!("expected ')' after '{what}'"), index)
-        }
-        ParserError::ExpectedSemicolonAfterLoopCondition(index) => {
-            ("expected ';' after loop condition".to_string(), index)
-        }
-        ParserError::MaximumArgsExceeded(index) => {
-            ("can't have more than 255 arguments".to_string(), index)
-        }
-        ParserError::ExpectedLBraceBeforeBody(what, index) => {
-            (format!("expected '{{' before {what} body"), index)
-        }
-    };
-
-    print_error_at(source, index.clone(), message.as_str());
-}
-
-pub fn print_runtime_error(source: &String, err: RuntimeError) {
-    let (message, index) = match err {
-        RuntimeError::BinaryOpUnaryTypeError(value, op, index) => (
-            format!("operator '{op}' can't be used with '{:?}'", value),
-            index,
-        ),
-        RuntimeError::BinaryOpTyperError(lhs, op, rhs, index) => (
-            format!(
-                "operator '{op}' for '{:?}' and '{:?}' is not allowed",
-                lhs, rhs
-            ),
-            index,
-        ),
-        RuntimeError::UnaryOpTypeError(value, op, index) => (
-            format!("unary operator '{op}' can not be used with {:?}", value),
-            index,
-        ),
-        RuntimeError::DivByZero(index) => ("division by zero".to_string(), index),
-        RuntimeError::UnknownVariable(name, index) => (format!("unknown variable '{name}'"), index),
-        RuntimeError::ControlFlow(cf, index) => {
-            (format!("illegal control flow statement '{:?}'", cf), index)
-        }
-        RuntimeError::NotCallable(index) => ("expression is not callable".to_string(), index),
-        RuntimeError::FnInvalidNumberOfArguments(expected, got, index) => (
-            format!(
-                "invalid number of arguments passed to function, expected {expected} parameters but received {got} parameters instead"
-            ),
-            index,
-        ),
-        RuntimeError::CantModifyBuiltins(index) => ("can't modify builtins".to_string(), index),
-        RuntimeError::CantConvertValue(value, to, index) => {
-            (format!("can't convert {:?} to {to}", value), index)
-        }
-        RuntimeError::AssertionFailed(message, index) => {
-            (format!("assertion failed: {message}"), index)
-        }
-        RuntimeError::Panic(message, index) => (format!("PANIC: {message}"), index),
-    };
-
-    print_error_at(source, index, message.as_str());
+pub fn handle_lox_error(source: &String, err: LoxError) {
+    match err {
+        LoxError::LexerError(err) => print_lexer_error(source, err),
+        LoxError::ParserErrors(errors) => errors
+            .iter()
+            .for_each(|err| print_parser_error(source, err)),
+        LoxError::ResolverError(err) => print_resolver_error(source, err),
+        LoxError::RuntimeError(err) => print_runtime_error(source, err),
+    }
 }
 
 pub fn print_error_at(source: &str, index: usize, error: &str) {

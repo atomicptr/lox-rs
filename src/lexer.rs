@@ -1,5 +1,7 @@
 use std::num::ParseFloatError;
 
+use crate::errormsg::print_error_at;
+
 #[derive(Debug, PartialEq, Clone)]
 pub enum Token {
     LParen,
@@ -362,6 +364,20 @@ pub fn lexer(source: &str) -> Result<Vec<(Token, usize)>, LexerError> {
     tokens.push(Some((Token::Eof, data.len())));
 
     Ok(tokens.into_iter().flatten().collect())
+}
+
+pub fn print_lexer_error(source: &String, err: LexerError) {
+    let (message, index) = match err {
+        LexerError::UnexpectedCharacter(c, index) => (format!("unexpected character {c}"), index),
+        LexerError::UnterminatedString(index) => ("unterminated string".to_string(), index),
+        LexerError::TrailingDot(index) => ("trailing dot".to_string(), index),
+        LexerError::CouldNotParseNumber(str, err, index) => (
+            format!("could not parse '{str}' into number: {:?}", err),
+            index,
+        ),
+    };
+
+    print_error_at(source, index, message.as_str());
 }
 
 #[cfg(test)]
