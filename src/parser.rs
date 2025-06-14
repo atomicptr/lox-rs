@@ -38,7 +38,7 @@ impl From<String> for Value {
 
 #[derive(Debug, Clone)]
 pub enum Fn {
-    LoxFunc(String, Vec<String>, Vec<Stmt>, Rc<RefCell<Env>>),
+    LoxFunc(Option<String>, Vec<String>, Vec<Stmt>, Rc<RefCell<Env>>),
     NativeFunc(fn(usize, &Vec<Value>) -> Result<Value, RuntimeError>, usize),
 }
 
@@ -55,7 +55,12 @@ impl Display for Fn {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let res = match self {
             Fn::LoxFunc(name, params, _, _) => {
-                format!("<fun {name}/{}({})>", self.arity(), params.join(", "))
+                format!(
+                    "<fun {}/{}({})>",
+                    name.clone().unwrap_or(String::from("closure")),
+                    self.arity(),
+                    params.join(", ")
+                )
             }
             Fn::NativeFunc(_, _) => format!("<native fun/{}(...)>", self.arity()),
         };
@@ -193,6 +198,7 @@ pub enum Expr {
     Variable(String, usize),
     Assignment(String, Box<Expr>, usize),
     Call(Box<Expr>, Vec<Box<Expr>>, usize),
+    Closure(Vec<String>, Vec<Stmt>, usize),
 }
 
 impl Expr {
@@ -206,6 +212,7 @@ impl Expr {
             Expr::Assignment(_, _, index) => index.clone(),
             Expr::Logical(_, _, _, index) => index.clone(),
             Expr::Call(_, _, index) => index.clone(),
+            Expr::Closure(_, _, index) => index.clone(),
         }
     }
 }
@@ -354,11 +361,26 @@ impl Parser {
             return Ok(Stmt::Func(name, params, body));
         }
 
-        let (_, index) = self.previous().unwrap();
-        Err(ParserError::ExpectedName(
-            "function".to_string(),
-            index.clone(),
-        ))
+        Ok(Stmt::Expr(Box::new(self.function_expr()?)))
+    }
+
+    fn function_expr(&mut self) -> Result<Expr, ParserError> {
+        let (_, prev_index) = self.previous().unwrap();
+        let prev_index = prev_index.clone();
+
+        let params = self.parameters(String::from("closure"))?;
+
+        if self.consume_isnt(Token::LBrace) {
+            let (_, index) = self.previous().unwrap();
+            return Err(ParserError::ExpectedLBraceBeforeBody(
+                String::from("closure"),
+                index.clone(),
+            ));
+        }
+
+        let body = self.block()?;
+
+        Ok(Expr::Closure(params, body, prev_index))
     }
 
     fn parameters(&mut self, what: String) -> Result<Vec<String>, ParserError> {
@@ -851,6 +873,11 @@ impl Parser {
             return Ok(Expr::Literal(Value::Nil, *index));
         }
 
+        if let Some(_) = self.consume(Token::Fun) {
+            let expr = self.function_expr()?;
+            return Ok(expr);
+        }
+
         if let Some((current, index)) = self.current() {
             let index = index.clone();
 
@@ -1099,6 +1126,13 @@ pub fn print_expr(expr: &Expr, indent_level: usize) {
 
             for arg in args {
                 print_expr(arg, indent_level + 2);
+            }
+        }
+        Expr::Closure(params, body, _) => {
+            println!("{indent}Closure fun({})", params.join(", "));
+
+            for stmt in body {
+                print_stmt(stmt, indent_level + 1);
             }
         }
     }

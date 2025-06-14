@@ -193,7 +193,7 @@ impl Interpreter {
                 env.borrow_mut().define(
                     name,
                     Value::Func(Fn::LoxFunc(
-                        name.clone(),
+                        Some(name.clone()),
                         params.clone(),
                         body.clone(),
                         env.clone(),
@@ -419,6 +419,12 @@ impl Interpreter {
                     _ => Err(RuntimeError::NotCallable(callee.token_index())),
                 }
             }
+            Expr::Closure(params, body, _) => Ok(Value::Func(Fn::LoxFunc(
+                None,
+                params.clone(),
+                body.clone(),
+                env,
+            ))),
         }
     }
 
@@ -429,12 +435,8 @@ impl Interpreter {
         index: usize,
     ) -> Result<Value, RuntimeError> {
         let res = match fun {
-            Fn::LoxFunc(name, params, block, env) => {
+            Fn::LoxFunc(_, params, block, env) => {
                 let env = Env::create_child(env);
-
-                env.borrow_mut()
-                    .define(&String::from("__FUN"), Value::from(name.clone()));
-
                 for (i, param) in params.iter().enumerate() {
                     env.borrow_mut().define(param, args.get(i).unwrap().clone());
                 }
