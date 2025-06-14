@@ -31,15 +31,22 @@ fn main() {
 fn run_prompt() {
     let mut interpreter = Interpreter::default();
 
+    println!("Welcome to \x1b[1mlox-rs\x1b[0m!");
+
     loop {
         let mut s = String::new();
 
-        print!("> ");
+        print!("\x1b[31;1m>>>\x1b[0m ");
         let _ = stdout().flush();
 
         stdin().read_line(&mut s).expect("could not read string");
 
-        let s = s.trim().to_string();
+        let mut s = s.trim().to_string();
+
+        // an unfinished statement
+        if !s.ends_with(";") && !s.ends_with("}") {
+            s += ";";
+        }
 
         match run(&mut interpreter, &s) {
             Ok(val) => println!("{}", val),
@@ -96,9 +103,9 @@ fn run(interpreter: &mut Interpreter, code: &String) -> Result<Value, LoxError> 
 
     let stmts = parser::parse(tokens)?;
 
-    for stmt in stmts.iter() {
-        print_stmt(stmt, 0);
-    }
+    // for stmt in stmts.iter() {
+    //     print_stmt(stmt, 0);
+    // }
 
     Ok(interpreter.run(&stmts)?)
 }

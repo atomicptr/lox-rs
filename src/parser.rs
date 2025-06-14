@@ -256,44 +256,8 @@ pub enum ParserError {
     ExpectedRParenAfter(String, usize),
     ExpectedSemicolonAfterLoopCondition(usize),
     MaximumArgsExceeded(usize),
-    ExpectedName(String, usize),
     ExpectedLBraceBeforeBody(String, usize),
 }
-
-/*
-
-Expression Grammar:
--------------------
-
-program        → declaration* EOF ;
-declaration    → funDecl | varDecl | statement;
-funDecl        → "fun" function ;
-function       → IDENTIFIER "(" parameters? ")" block ;
-parameters     → IDENTIFIER ( "," IDENTIFIER )* ;
-varDecl        → "var" IDENTIFIER ( "=" expression )? ";" ;
-statement      → exprStmt | "break" | "continue" | forStmt | ifStmt | printStmt | returnStmt | whileStmt | block ;
-exprStmt       → expression ";" ;
-forStmt        → "for" "(" ( varDecl | exprStmt | ";" ) expression? ";" expression? ")" statement ;
-ifStmt         → "if" "(" expression ")" statement ( "else" statement )? ;
-printStmt      → "print" expression ";" ;
-returnStmt     → "return" expression? ";" ;
-whileStmt      → "while" "(" expression ")" statement ;
-block          → "{" declaration* "}" ;
-expression     → assignment ;
-assignment     → IDENTIFIER "=" assignment | logic_or;
-logic_or       → logic_and ( "or" logic_and )* ;
-logic_and      → equality ( "and" equality )* ;
-equality       → comparison ( ( "!=" | "==" ) comparison )* ;
-comparison     → term ( ( ">" | ">=" | "<" | "<=" ) term )* ;
-term           → factor ( ( "-" | "+" ) factor )* ;
-factor         → unary ( ( "/" | "*" ) unary )* ;
-unary          → ( "!" | "-" ) unary | call ;
-call           → primary ( "(" arguments? ")" )* ;
-arguments      → expression ( "," expression )* ;
-primary        → NUMBER | STRING | "true" | "false" | "nil"
-               | "(" expression ")" | IDENTIFIER ;
-
-*/
 
 impl Parser {
     fn from(tokens: Vec<(Token, usize)>) -> Self {
@@ -304,7 +268,6 @@ impl Parser {
         }
     }
 
-    // program        → declaration* EOF ;
     fn program(&mut self) -> Result<Vec<Stmt>, Vec<ParserError>> {
         let mut stmts = vec![];
 
@@ -329,7 +292,6 @@ impl Parser {
         Ok(stmts)
     }
 
-    // declaration    → varDecl | statement;
     fn declaration(&mut self) -> Result<Stmt, ParserError> {
         if self.matches(&[Token::Fun]) {
             self.function()
@@ -340,7 +302,6 @@ impl Parser {
         }
     }
 
-    // function       → IDENTIFIER "(" parameters? ")" block ;
     fn function(&mut self) -> Result<Stmt, ParserError> {
         if let Some((Token::Identifier(name), _)) = self.consume(Token::Identifier("".to_string()))
         {
@@ -420,7 +381,6 @@ impl Parser {
         Ok(params)
     }
 
-    // varDecl        → "var" IDENTIFIER ( "=" expression )? ";" ;
     fn var_declaration(&mut self) -> Result<Stmt, ParserError> {
         if let Some((Token::Identifier(name), index)) =
             self.consume(Token::Identifier("".to_string()))
@@ -450,7 +410,6 @@ impl Parser {
         Err(ParserError::UnexpectedToken(token.clone(), index.clone()))
     }
 
-    // statement      → exprStmt | forStmt | ifStmt | printStmt | whileStmt | block ;
     fn statement(&mut self) -> Result<Stmt, ParserError> {
         if self.matches(&[Token::Break, Token::Continue]) {
             let (token, index) = self.previous().unwrap();
@@ -485,7 +444,6 @@ impl Parser {
         }
     }
 
-    // block          → "{" declaration* "}" ;
     fn block(&mut self) -> Result<Vec<Stmt>, ParserError> {
         let mut stmts = vec![];
 
@@ -507,7 +465,6 @@ impl Parser {
         Err(ParserError::ExpectedRBraceAfterBlock(index.clone()))
     }
 
-    // exprStmt       → expression ";" ;
     fn expr_stmt(&mut self) -> Result<Stmt, ParserError> {
         let expr = self.expression()?;
 
@@ -518,7 +475,6 @@ impl Parser {
         }
     }
 
-    // forStmt        → "for" "(" ( varDecl | exprStmt | ";" ) expression? ";" expression? ")" statement ;
     fn for_stmt(&mut self) -> Result<Stmt, ParserError> {
         if self.consume_isnt(Token::LParen) {
             let (_, index) = self.previous().unwrap();
@@ -587,7 +543,6 @@ impl Parser {
         Ok(body)
     }
 
-    // ifStmt         → "if" "(" expression ")" statement ( "else" statement )? ;
     fn if_stmt(&mut self) -> Result<Stmt, ParserError> {
         if let Some(_) = self.consume(Token::LParen) {
             let condition = self.expression()?;
@@ -620,7 +575,6 @@ impl Parser {
         ))
     }
 
-    // printStmt      → "print" expression ";" ;
     fn print_stmt(&mut self) -> Result<Stmt, ParserError> {
         let expr = self.expression()?;
 
@@ -631,7 +585,6 @@ impl Parser {
         }
     }
 
-    // returnStmt     → "return" expression? ";" ;
     fn return_stmt(&mut self) -> Result<Stmt, ParserError> {
         let (_, return_index) = self.previous().unwrap();
         let return_index = return_index.clone();
@@ -651,7 +604,6 @@ impl Parser {
         Ok(Stmt::Return(expr, return_index))
     }
 
-    // whileStmt      → "while" "(" expression ")" statement ;
     fn while_stmt(&mut self) -> Result<Stmt, ParserError> {
         if let Some(_) = self.consume(Token::LParen) {
             let condition = self.expression()?;
@@ -677,12 +629,10 @@ impl Parser {
         ))
     }
 
-    // expression     → assignment ;
     fn expression(&mut self) -> Result<Expr, ParserError> {
         self.assignment()
     }
 
-    // assignment     → IDENTIFIER "=" assignment | logic_or;
     fn assignment(&mut self) -> Result<Expr, ParserError> {
         let expr = self.logic_or()?;
 
@@ -702,7 +652,6 @@ impl Parser {
         Ok(expr)
     }
 
-    // logic_or       → logic_and ( "or" logic_and )* ;
     fn logic_or(&mut self) -> Result<Expr, ParserError> {
         let mut expr = self.logic_and()?;
 
@@ -720,7 +669,6 @@ impl Parser {
         Ok(expr)
     }
 
-    // logic_and      → equality ( "and" equality )* ;
     fn logic_and(&mut self) -> Result<Expr, ParserError> {
         let mut expr = self.equality()?;
 
@@ -738,7 +686,6 @@ impl Parser {
         Ok(expr)
     }
 
-    // equality       → comparison ( ( "!=" | "==" ) comparison )* ;
     fn equality(&mut self) -> Result<Expr, ParserError> {
         let mut expr = self.comparison()?;
 
@@ -754,7 +701,6 @@ impl Parser {
         Ok(expr)
     }
 
-    // comparison     → term ( ( ">" | ">=" | "<" | "<=" ) term )* ;
     fn comparison(&mut self) -> Result<Expr, ParserError> {
         let mut expr = self.term()?;
 
@@ -775,7 +721,6 @@ impl Parser {
         Ok(expr)
     }
 
-    // term           → factor ( ( "-" | "+" ) factor )* ;
     fn term(&mut self) -> Result<Expr, ParserError> {
         let mut expr = self.factor()?;
 
@@ -791,7 +736,6 @@ impl Parser {
         Ok(expr)
     }
 
-    // factor         → unary ( ( "/" | "*" ) unary )* ;
     fn factor(&mut self) -> Result<Expr, ParserError> {
         let mut expr = self.unary()?;
 
@@ -807,7 +751,6 @@ impl Parser {
         Ok(expr)
     }
 
-    // unary          → ( "!" | "-" ) unary | call ;
     fn unary(&mut self) -> Result<Expr, ParserError> {
         if self.matches(&[Token::Bang, Token::Minus]) {
             let (operator, op_index) = self
@@ -821,7 +764,6 @@ impl Parser {
         self.call()
     }
 
-    // call           → primary ( "(" arguments? ")" )* ;
     fn call(&mut self) -> Result<Expr, ParserError> {
         let mut expr = self.primary()?;
 
@@ -865,8 +807,6 @@ impl Parser {
         ))
     }
 
-    // primary        → NUMBER | STRING | "true" | "false" | "nil"
-    //                | "(" expression ")" | IDENTIFIER ;
     fn primary(&mut self) -> Result<Expr, ParserError> {
         if self.matches(&[Token::Nil]) {
             let (_, index) = self.current().unwrap();
