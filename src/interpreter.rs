@@ -516,6 +516,8 @@ impl Interpreter {
                     Value::String(str) => match name.as_str() {
                         "length" => Ok(Value::Number(str.len() as f64)),
                         "reversed" => Ok(Value::String(str.chars().rev().collect())),
+                        "uppercased" => Ok(Value::String(str.to_uppercase())),
+                        "lowercased" => Ok(Value::String(str.to_lowercase())),
                         _ => Err(RuntimeError::InvalidPropertyRead(
                             lhs,
                             name.clone(),
