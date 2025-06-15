@@ -1,6 +1,6 @@
 # lox-rs
 
-My implementation of the lox programing language from the [Crafting Interpreters](https://craftinginterpreters.com/) book.
+My implementation of the "tree walk interpreter" lox programing language from the [Crafting Interpreters](https://craftinginterpreters.com/) book.
 
 ## Changes
 
