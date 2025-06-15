@@ -176,6 +176,7 @@ impl Resolver<'_> {
                 self.resolve_expr(then_expr)?;
                 self.resolve_expr(else_expr)
             }
+            Expr::ReadProperty(expr, _, _) => self.resolve_expr(expr),
         }
     }
 

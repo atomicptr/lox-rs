@@ -99,6 +99,8 @@ pub enum RuntimeError {
     CantConvertValue(Value, String, usize),
     AssertionFailed(Value, usize),
     Panic(Value, usize),
+    InvalidPropertyRead(Value, String, usize),
+    UnknownProperty(Value, String, usize),
 }
 
 #[derive(Debug)]
@@ -447,7 +449,7 @@ impl Interpreter {
                     args.push(self.evaluate_expr(arg, env.clone())?);
                 }
 
-                match callee_val {
+                match callee_val.clone() {
                     Value::Func(fun) => {
                         if fun.arity() != args.len() {
                             return Err(RuntimeError::FnInvalidNumberOfArguments(
@@ -458,6 +460,23 @@ impl Interpreter {
                         }
 
                         self.call_func(fun, &args, callee.token_index())
+                    }
+                    Value::Class(_) => {
+                        // if has constructor, get that, check arity, call
+                        let init_arity = 0;
+
+                        if init_arity != args.len() {
+                            return Err(RuntimeError::FnInvalidNumberOfArguments(
+                                init_arity,
+                                args.len(),
+                                callee.token_index(),
+                            ));
+                        }
+
+                        Ok(Value::Instance(
+                            Box::new(callee_val),
+                            Rc::new(RefCell::new(HashMap::new())),
+                        ))
                     }
                     _ => Err(RuntimeError::NotCallable(callee.token_index())),
                 }
@@ -476,6 +495,29 @@ impl Interpreter {
                 }
 
                 Ok(self.evaluate_expr(else_expr, env)?)
+            }
+            Expr::ReadProperty(lhs, name, index) => {
+                let lhs = self.evaluate_expr(lhs, env)?;
+
+                match lhs.clone() {
+                    Value::Instance(_class, params) => {
+                        // TODO: allow access to methods?
+                        if let Some(value) = params.borrow().get(name) {
+                            Ok(value.clone())
+                        } else {
+                            Err(RuntimeError::UnknownProperty(
+                                lhs,
+                                name.clone(),
+                                index.clone(),
+                            ))
+                        }
+                    }
+                    _ => Err(RuntimeError::InvalidPropertyRead(
+                        lhs,
+                        name.clone(),
+                        index.clone(),
+                    )),
+                }
             }
         }
     }
@@ -584,6 +626,13 @@ pub fn print_runtime_error(source: &String, err: RuntimeError) {
             (format!("assertion failed: {message}"), index)
         }
         RuntimeError::Panic(message, index) => (format!("PANIC: {message}"), index),
+        RuntimeError::InvalidPropertyRead(callee, name, index) => (
+            format!("invalid property access '.{name}' on '{callee}'"),
+            index,
+        ),
+        RuntimeError::UnknownProperty(callee, name, index) => {
+            (format!("'{callee}' has no property '.{name}'"), index)
+        }
     };
 
     print_error_at(source, index, message.as_str());

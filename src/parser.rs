@@ -1,4 +1,4 @@
-use std::{cell::RefCell, fmt::Display, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, fmt::Display, rc::Rc};
 
 use crate::{
     errormsg::print_error_at,
@@ -13,6 +13,7 @@ pub enum Value {
     Bool(bool),
     Func(Fn),
     Class(String),
+    Instance(Box<Value>, Rc<RefCell<HashMap<String, Value>>>),
     Nil,
 }
 
@@ -24,6 +25,18 @@ impl Display for Value {
             Value::Bool(b) => format!("{b}"),
             Value::Func(fun) => format!("{fun}"),
             Value::Class(name) => format!("<class {name}>"),
+            Value::Instance(class, props) => match class.as_ref() {
+                Value::Class(name) => format!(
+                    "{name}{{{}}}",
+                    props
+                        .borrow()
+                        .iter()
+                        .map(|(k, v)| format!("{k}: {v}"))
+                        .collect::<Vec<String>>()
+                        .join(", ")
+                ),
+                _ => unreachable!(),
+            },
             Value::Nil => "nil".to_string(),
         };
 
@@ -203,21 +216,23 @@ pub enum Expr {
     Call(Box<Expr>, Vec<Box<Expr>>, usize),
     Closure(Vec<(String, usize)>, Vec<Stmt>, usize),
     Ternary(Box<Expr>, Box<Expr>, Box<Expr>, usize),
+    ReadProperty(Box<Expr>, String, usize),
 }
 
 impl Expr {
     pub fn token_index(&self) -> usize {
         match self {
-            Expr::Binary(_, _, _, index) => index.clone(),
-            Expr::Grouping(_, (start, _)) => start.clone(),
-            Expr::Literal(_, index) => index.clone(),
-            Expr::Unary(_, _, index) => index.clone(),
-            Expr::Variable(_, index) => index.clone(),
-            Expr::Assignment(_, _, index) => index.clone(),
-            Expr::Logical(_, _, _, index) => index.clone(),
-            Expr::Call(_, _, index) => index.clone(),
-            Expr::Closure(_, _, index) => index.clone(),
-            Expr::Ternary(_, _, _, index) => index.clone(),
+            Expr::Binary(_, _, _, index) => *index,
+            Expr::Grouping(_, (start, _)) => *start,
+            Expr::Literal(_, index) => *index,
+            Expr::Unary(_, _, index) => *index,
+            Expr::Variable(_, index) => *index,
+            Expr::Assignment(_, _, index) => *index,
+            Expr::Logical(_, _, _, index) => *index,
+            Expr::Call(_, _, index) => *index,
+            Expr::Closure(_, _, index) => *index,
+            Expr::Ternary(_, _, _, index) => *index,
+            Expr::ReadProperty(_, _, index) => *index,
         }
     }
 }
@@ -285,6 +300,7 @@ pub enum ParserError {
     MaximumArgsExceeded(usize),
     ExpectedLBraceBeforeBody(String, usize),
     ExpectedName(String, usize),
+    ExpectedMemberNameAfterDot(usize),
 }
 
 impl Parser {
@@ -857,6 +873,13 @@ impl Parser {
         loop {
             if self.matches(&[Token::LParen]) {
                 expr = self.finish_call(expr)?;
+            } else if self.matches(&[Token::Dot]) {
+                if let Some((name, index)) = self.consume_identifier() {
+                    expr = Expr::ReadProperty(Box::new(expr), name, index)
+                } else {
+                    let index = self.previous_index().unwrap();
+                    return Err(ParserError::ExpectedMemberNameAfterDot(index));
+                }
             } else {
                 break;
             }
@@ -1177,7 +1200,7 @@ pub fn print_expr(expr: &Expr, indent_level: usize, prefix: Option<String>) {
             println!("{indent}{prefix}Unary: (Operator {:?})", op);
             print_expr(expr, indent_level + 1, None);
         }
-        Expr::Literal(value, _) => match value {
+        Expr::Literal(value, index) => match value {
             Value::String(s) => println!("{indent}{prefix}String = {s}"),
             Value::Number(n) => println!("{indent}{prefix}Number = {n}"),
             Value::Bool(b) => {
@@ -1185,6 +1208,20 @@ pub fn print_expr(expr: &Expr, indent_level: usize, prefix: Option<String>) {
             }
             Value::Func(fun) => println!("{indent}{prefix}func {fun}"),
             Value::Class(name) => println!("{indent}{prefix}class {name}"),
+            Value::Instance(class, props) => match class.as_ref() {
+                Value::Class(name) => {
+                    println!("{indent}{prefix}instance of class {name}");
+
+                    for (name, value) in props.borrow().iter() {
+                        print_expr(
+                            &Expr::Literal(value.clone(), index.clone()),
+                            indent_level + 1,
+                            Some(format!("Property '{name}'")),
+                        );
+                    }
+                }
+                _ => unreachable!(),
+            },
             Value::Nil => println!("{indent}{prefix}Nil"),
         },
         Expr::Variable(name, _) => println!("{indent}{prefix}Var {name}"),
@@ -1224,6 +1261,10 @@ pub fn print_expr(expr: &Expr, indent_level: usize, prefix: Option<String>) {
             print_expr(&condition, indent_level + 1, Some(String::from("Cond: ")));
             print_expr(&then_expr, indent_level + 1, Some(String::from("Then: ")));
             print_expr(&else_expr, indent_level + 1, Some(String::from("Else: ")));
+        }
+        Expr::ReadProperty(lhs, name, _) => {
+            println!("{indent}{prefix}Get Expr: .{name}");
+            print_expr(lhs, indent_level + 1, None);
         }
     }
 }
@@ -1265,6 +1306,9 @@ pub fn print_parser_error(source: &String, err: &ParserError) {
             (format!("expected '{{' before {what} body"), index)
         }
         ParserError::ExpectedName(what, index) => (format!("expected {what} name"), index),
+        ParserError::ExpectedMemberNameAfterDot(index) => {
+            ("expected member name after '.'".to_string(), index)
+        }
     };
 
     print_error_at(source, index.clone(), message.as_str());
