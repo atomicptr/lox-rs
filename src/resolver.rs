@@ -101,9 +101,24 @@ impl Resolver<'_> {
             }
             Stmt::Break(_) => Ok(()),
             Stmt::Continue(_) => Ok(()),
-            Stmt::Class(name, _, index) => {
+            Stmt::Class(name, methods, index) => {
                 self.declare(name, index.clone())?;
                 self.define(name, index.clone());
+
+                self.begin_scope();
+
+                if let Some(scope) = self.scopes.first_mut() {
+                    scope.insert(String::from("this"), VarState::Used);
+                }
+
+                for method in methods {
+                    if let Stmt::Func(_, params, body, _) = method {
+                        self.resolve_func(params, body)?;
+                    }
+                }
+
+                self.end_scope();
+
                 Ok(())
             }
         }
@@ -180,6 +195,10 @@ impl Resolver<'_> {
             Expr::WriteProperty(lhs, _, rhs, _) => {
                 self.resolve_expr(lhs)?;
                 self.resolve_expr(rhs)
+            }
+            Expr::This(_) => {
+                self.resolve_local(expr, &String::from("this"));
+                Ok(())
             }
         }
     }

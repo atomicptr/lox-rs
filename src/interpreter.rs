@@ -9,12 +9,12 @@ use crate::{
 #[derive(Debug, Default)]
 pub struct Env {
     parent: Option<Rc<RefCell<Env>>>,
-    vars: HashMap<String, Value>,
+    vars: HashMap<String, Rc<Value>>,
     is_builtin_env: bool,
 }
 
 impl Env {
-    pub fn lookup(&self, name: &String, distance: Option<usize>) -> Option<Value> {
+    pub fn lookup(&self, name: &String, distance: Option<usize>) -> Option<Rc<Value>> {
         match distance {
             Some(0) => self.vars.get(name).map(|v| v.clone()),
             Some(n) => self.lookup(name, Some(n.checked_sub(1).unwrap())),
@@ -31,14 +31,14 @@ impl Env {
         }
     }
 
-    pub fn define(&mut self, name: &String, value: Value) {
+    pub fn define(&mut self, name: &String, value: Rc<Value>) {
         self.vars.insert(name.clone(), value);
     }
 
     pub fn assign(
         &mut self,
         name: &String,
-        value: Value,
+        value: Rc<Value>,
         index: &usize,
         dist: Option<usize>,
     ) -> Result<(), RuntimeError> {
@@ -125,19 +125,19 @@ impl Default for Interpreter {
         // define language builtins
         builtins.define(
             &String::from("time"),
-            Value::Func(Fn::NativeFunc(lox_time, 0)),
+            Rc::new(Value::Func(Fn::NativeFunc(lox_time, 0), None)),
         );
         builtins.define(
             &String::from("tostring"),
-            Value::Func(Fn::NativeFunc(lox_tostring, 1)),
+            Rc::new(Value::Func(Fn::NativeFunc(lox_tostring, 1), None)),
         );
         builtins.define(
             &String::from("panic"),
-            Value::Func(Fn::NativeFunc(lox_panic, 1)),
+            Rc::new(Value::Func(Fn::NativeFunc(lox_panic, 1), None)),
         );
         builtins.define(
             &String::from("assert"),
-            Value::Func(Fn::NativeFunc(lox_assert, 2)),
+            Rc::new(Value::Func(Fn::NativeFunc(lox_assert, 2), None)),
         );
 
         Self {
@@ -176,7 +176,8 @@ impl Interpreter {
                     None
                 };
 
-                env.borrow_mut().define(name, value.unwrap_or(Value::Nil));
+                env.borrow_mut()
+                    .define(name, Rc::new(value.unwrap_or(Value::Nil)));
 
                 Ok(Value::Nil)
             }
@@ -231,11 +232,14 @@ impl Interpreter {
             Stmt::Func(name, params, body, _) => {
                 env.borrow_mut().define(
                     name,
-                    Value::Func(Fn::LoxFunc(
-                        Some(name.clone()),
-                        params.iter().map(|(name, _)| name.clone()).collect(),
-                        body.clone(),
-                        env.clone(),
+                    Rc::new(Value::Func(
+                        Fn::LoxFunc(
+                            Some(name.clone()),
+                            params.iter().map(|(name, _)| name.clone()).collect(),
+                            body.clone(),
+                            env.clone(),
+                        ),
+                        None,
                     )),
                 );
                 Ok(Value::Nil)
@@ -252,8 +256,28 @@ impl Interpreter {
                     index.clone(),
                 ))
             }
-            Stmt::Class(name, _methods, _) => {
-                env.borrow_mut().define(name, Value::Class(name.clone()));
+            Stmt::Class(name, methods, _) => {
+                let methods_map = Rc::new(RefCell::new(HashMap::new()));
+                let class = Rc::new(Value::Class(name.clone(), methods_map.clone()));
+
+                for m in methods {
+                    if let Stmt::Func(name, params, body, _) = m {
+                        methods_map.borrow_mut().insert(
+                            name.clone(),
+                            Value::Func(
+                                Fn::LoxMethod(
+                                    name.clone(),
+                                    params.iter().map(|(name, _)| name.clone()).collect(),
+                                    body.clone(),
+                                    env.clone(),
+                                ),
+                                None,
+                            ),
+                        );
+                    }
+                }
+
+                env.borrow_mut().define(name, class);
                 Ok(Value::Nil)
             }
         }
@@ -403,7 +427,7 @@ impl Interpreter {
             }
             Expr::Variable(name, index) => {
                 match env.borrow().lookup(name, self.expr_distance(expr)) {
-                    Some(value) => Ok(value.clone()),
+                    Some(value) => Ok(value.as_ref().clone()),
                     None => Err(RuntimeError::UnknownVariable(name.clone(), index.clone())),
                 }
             }
@@ -413,7 +437,8 @@ impl Interpreter {
                 match var {
                     Some(_) => {
                         let value = self.evaluate_expr(expr, env.clone())?;
-                        env.borrow_mut().assign(name, value.clone(), index, dist)?;
+                        env.borrow_mut()
+                            .assign(name, Rc::new(value.clone()), index, dist)?;
                         Ok(value)
                     }
                     None => Err(RuntimeError::UnknownVariable(name.clone(), index.clone())),
@@ -451,7 +476,7 @@ impl Interpreter {
                 }
 
                 match callee_val.clone() {
-                    Value::Func(fun) => {
+                    Value::Func(fun, context) => {
                         if fun.arity() != args.len() {
                             return Err(RuntimeError::FnInvalidNumberOfArguments(
                                 fun.arity(),
@@ -460,11 +485,22 @@ impl Interpreter {
                             ));
                         }
 
-                        self.call_func(fun, &args, callee.token_index())
+                        self.call_func(&fun, &args, context, callee.token_index())
                     }
-                    Value::Class(_) => {
-                        // if has constructor, get that, check arity, call
-                        let init_arity = 0;
+                    Value::Class(_, methods) => {
+                        let instance = Rc::new(Value::Instance(
+                            Box::new(callee_val),
+                            Rc::new(RefCell::new(HashMap::new())),
+                        ));
+
+                        let init_arity =
+                            if let Some(Value::Func(Fn::LoxMethod(_, params, _, _), _)) =
+                                methods.borrow().get("init")
+                            {
+                                params.len()
+                            } else {
+                                0
+                            };
 
                         if init_arity != args.len() {
                             return Err(RuntimeError::FnInvalidNumberOfArguments(
@@ -474,20 +510,33 @@ impl Interpreter {
                             ));
                         }
 
-                        Ok(Value::Instance(
-                            Box::new(callee_val),
-                            Rc::new(RefCell::new(HashMap::new())),
-                        ))
+                        if let Some(Value::Func(Fn::LoxMethod(_, _, _, _), _)) =
+                            methods.borrow().get("init")
+                        {
+                            if let Some(Value::Func(fun, _)) = methods.borrow().get("init") {
+                                let _ = self.call_func(
+                                    fun,
+                                    &args,
+                                    Some(instance.clone()),
+                                    callee.token_index(),
+                                );
+                            }
+                        }
+
+                        Ok(instance.as_ref().clone())
                     }
                     _ => Err(RuntimeError::NotCallable(callee.token_index())),
                 }
             }
-            Expr::Closure(params, body, _) => Ok(Value::Func(Fn::LoxFunc(
+            Expr::Closure(params, body, _) => Ok(Value::Func(
+                Fn::LoxFunc(
+                    None,
+                    params.iter().map(|(name, _)| name.clone()).collect(),
+                    body.clone(),
+                    env,
+                ),
                 None,
-                params.iter().map(|(name, _)| name.clone()).collect(),
-                body.clone(),
-                env,
-            ))),
+            )),
             Expr::Ternary(condition, then_expr, else_expr, _) => {
                 let cond = self.evaluate_expr(&condition, env.clone())?;
 
@@ -501,17 +550,24 @@ impl Interpreter {
                 let lhs = self.evaluate_expr(lhs, env)?;
 
                 match lhs.clone() {
-                    Value::Instance(_class, params) => {
-                        // TODO: allow access to methods?
+                    Value::Instance(class, params) => {
                         if let Some(value) = params.borrow().get(name) {
-                            Ok(value.clone())
-                        } else {
-                            Err(RuntimeError::UnknownProperty(
-                                lhs,
-                                name.clone(),
-                                index.clone(),
-                            ))
+                            return Ok(value.clone());
                         }
+
+                        if let Value::Class(_, methods) = class.as_ref() {
+                            if let Some(Value::Func(method, _)) = methods.borrow().get(name) {
+                                return Ok(Value::Func(method.clone(), Some(Rc::new(lhs))));
+                            }
+                        } else {
+                            unreachable!();
+                        }
+
+                        Err(RuntimeError::UnknownProperty(
+                            lhs,
+                            name.clone(),
+                            index.clone(),
+                        ))
                     }
                     Value::String(str) => match name.as_str() {
                         "length" => Ok(Value::Number(str.len() as f64)),
@@ -547,26 +603,66 @@ impl Interpreter {
                     )),
                 }
             }
+            Expr::This(index) => {
+                let this = env
+                    .borrow()
+                    .lookup(&String::from("this"), self.expr_distance(expr));
+
+                if let Some(this) = this {
+                    return Ok(this.as_ref().clone());
+                }
+
+                Err(RuntimeError::UnknownVariable(
+                    String::from("this"),
+                    index.clone(),
+                ))
+            }
         }
     }
 
     fn call_func(
         &mut self,
-        fun: Fn,
+        fun: &Fn,
         args: &Vec<Value>,
+        context: Option<Rc<Value>>,
         index: usize,
     ) -> Result<Value, RuntimeError> {
         let res = match fun {
-            Fn::LoxFunc(_, params, block, env) => {
-                let env = Env::create_child(env);
+            Fn::LoxFunc(_, params, body, env) => {
+                let env = Env::create_child(env.clone());
 
                 for (i, param) in params.iter().enumerate() {
-                    env.borrow_mut().define(param, args.get(i).unwrap().clone());
+                    env.borrow_mut()
+                        .define(param, Rc::new(args.get(i).unwrap().clone()));
                 }
 
-                match self.evaluate_block_with_env(&block, env) {
+                match self.evaluate_block_with_env(&body, env) {
                     Ok(_) => Ok(Value::Nil),
                     Err(err) => Err(err),
+                }
+            }
+            Fn::LoxMethod(name, params, body, env) => {
+                let env = Env::create_child(env.clone());
+
+                for (i, param) in params.iter().enumerate() {
+                    env.borrow_mut()
+                        .define(param, Rc::new(args.get(i).unwrap().clone()));
+                }
+
+                let context = context.unwrap();
+
+                env.borrow_mut()
+                    .define(&String::from("this"), context.clone());
+
+                match (name.as_str(), self.evaluate_block_with_env(&body, env)) {
+                    // a method named 'init' is always the constructor, which always returns 'this'
+                    ("init", Ok(_)) => Ok(context.as_ref().clone()),
+                    // also every return should return this
+                    ("init", Err(RuntimeError::ControlFlow(ControlFlow::Return(_), _))) => {
+                        Ok(context.as_ref().clone())
+                    }
+                    (_, Ok(_)) => Ok(Value::Nil),
+                    (_, Err(err)) => Err(err),
                 }
             }
             Fn::NativeFunc(fun, _) => fun(index, args),
@@ -609,6 +705,7 @@ impl Interpreter {
     }
 
     pub fn resolve(&mut self, expr: &Expr, depth: usize) {
+        // TODO: replace the token index with an token ID as this is kinda in the REPL
         self.locals.insert(expr.token_index(), depth);
     }
 }

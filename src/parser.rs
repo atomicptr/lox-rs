@@ -11,8 +11,8 @@ pub enum Value {
     String(String),
     Number(f64),
     Bool(bool),
-    Func(Fn),
-    Class(String),
+    Func(Fn, Option<Rc<Value>>),
+    Class(String, Rc<RefCell<HashMap<String, Value>>>),
     Instance(Box<Value>, Rc<RefCell<HashMap<String, Value>>>),
     Nil,
 }
@@ -23,10 +23,10 @@ impl Display for Value {
             Value::String(s) => format!("\"{s}\""),
             Value::Number(n) => format!("{n}"),
             Value::Bool(b) => format!("{b}"),
-            Value::Func(fun) => format!("{fun}"),
-            Value::Class(name) => format!("<class {name}>"),
+            Value::Func(fun, _) => format!("{fun}"),
+            Value::Class(name, _) => format!("<class {name}>"),
             Value::Instance(class, props) => match class.as_ref() {
-                Value::Class(name) => format!(
+                Value::Class(name, _) => format!(
                     "{name}{{{}}}",
                     props
                         .borrow()
@@ -55,6 +55,7 @@ impl From<String> for Value {
 #[derive(Debug, Clone)]
 pub enum Fn {
     LoxFunc(Option<String>, Vec<String>, Vec<Stmt>, Rc<RefCell<Env>>),
+    LoxMethod(String, Vec<String>, Vec<Stmt>, Rc<RefCell<Env>>),
     NativeFunc(fn(usize, &Vec<Value>) -> Result<Value, RuntimeError>, usize),
 }
 
@@ -62,6 +63,7 @@ impl Fn {
     pub fn arity(&self) -> usize {
         match self {
             Fn::LoxFunc(_, params, _, _) => params.len(),
+            Fn::LoxMethod(_, params, _, _) => params.len(),
             Fn::NativeFunc(_, arity) => arity.clone(),
         }
     }
@@ -75,8 +77,11 @@ impl Display for Fn {
                     "<fun {}/{}({})>",
                     name.clone().unwrap_or(String::from("closure")),
                     self.arity(),
-                    params.join(", ")
+                    params.join(", "),
                 )
+            }
+            Fn::LoxMethod(name, params, _, _) => {
+                format!("<method {name}/{}({})>", self.arity(), params.join(", "),)
             }
             Fn::NativeFunc(_, _) => format!("<native fun/{}(...)>", self.arity()),
         };
@@ -218,6 +223,7 @@ pub enum Expr {
     Ternary(Box<Expr>, Box<Expr>, Box<Expr>, usize),
     ReadProperty(Box<Expr>, String, usize),
     WriteProperty(Box<Expr>, String, Box<Expr>, usize),
+    This(usize),
 }
 
 impl Expr {
@@ -235,6 +241,7 @@ impl Expr {
             Expr::Ternary(_, _, _, index) => *index,
             Expr::ReadProperty(_, _, index) => *index,
             Expr::WriteProperty(_, _, _, index) => *index,
+            Expr::This(index) => *index,
         }
     }
 }
@@ -956,6 +963,10 @@ impl Parser {
             }
         }
 
+        if let Some((_, index)) = self.consume(Token::This) {
+            return Ok(Expr::This(index.clone()));
+        }
+
         if let Some((name, index)) = self.consume_identifier() {
             return Ok(Expr::Variable(name, index));
         }
@@ -1212,10 +1223,20 @@ pub fn print_expr(expr: &Expr, indent_level: usize, prefix: Option<String>) {
             Value::Bool(b) => {
                 println!("{indent}{prefix}Bool = {b}")
             }
-            Value::Func(fun) => println!("{indent}{prefix}func {fun}"),
-            Value::Class(name) => println!("{indent}{prefix}class {name}"),
+            Value::Func(fun, _) => println!("{indent}{prefix}func {fun}"),
+            Value::Class(name, methods) => {
+                println!("{indent}{prefix}class {name}");
+
+                for (name, fun) in methods.borrow().iter() {
+                    print_expr(
+                        &Expr::Literal(fun.clone(), index.clone()),
+                        indent_level + 1,
+                        Some(format!("Method {name}: ")),
+                    );
+                }
+            }
             Value::Instance(class, props) => match class.as_ref() {
-                Value::Class(name) => {
+                Value::Class(name, _) => {
                     println!("{indent}{prefix}instance of class {name}");
 
                     for (name, value) in props.borrow().iter() {
@@ -1277,6 +1298,7 @@ pub fn print_expr(expr: &Expr, indent_level: usize, prefix: Option<String>) {
             print_expr(lhs, indent_level + 1, Some(String::from("Set: ")));
             print_expr(rhs, indent_level + 1, Some(String::from("To: ")));
         }
+        Expr::This(_) => println!("{indent}{prefix}This"),
     }
 }
 
