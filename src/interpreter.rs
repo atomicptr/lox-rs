@@ -559,11 +559,12 @@ impl Interpreter {
         let res = match fun {
             Fn::LoxFunc(_, params, block, env) => {
                 let env = Env::create_child(env);
+
                 for (i, param) in params.iter().enumerate() {
                     env.borrow_mut().define(param, args.get(i).unwrap().clone());
                 }
 
-                match self.evaluate_block(&block, env) {
+                match self.evaluate_block_with_env(&block, env) {
                     Ok(_) => Ok(Value::Nil),
                     Err(err) => Err(err),
                 }
@@ -592,9 +593,16 @@ impl Interpreter {
         env: Rc<RefCell<Env>>,
     ) -> Result<(), RuntimeError> {
         let new_env = Env::create_child(env);
+        self.evaluate_block_with_env(stmts, new_env)
+    }
 
+    fn evaluate_block_with_env(
+        &mut self,
+        stmts: &Vec<Stmt>,
+        env: Rc<RefCell<Env>>,
+    ) -> Result<(), RuntimeError> {
         for stmt in stmts.iter() {
-            let _ = self.evaluate_stmt(stmt, new_env.clone())?;
+            let _ = self.evaluate_stmt(stmt, env.clone())?;
         }
 
         Ok(())
