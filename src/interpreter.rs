@@ -12,6 +12,7 @@ pub struct Env {
     vars: HashMap<String, Rc<Value>>,
     parent: Option<Rc<RefCell<Env>>>,
     is_builtin_env: bool,
+    origin: Option<String>,
 }
 
 impl Env {
@@ -55,9 +56,6 @@ impl Env {
         index: &usize,
         dist: Option<usize>,
     ) -> Result<(), RuntimeError> {
-        println!("\x1b[31m=== Assign\x1b[0m '{name}' {dist:?}");
-        println!("{self}");
-
         if self.is_builtin_env {
             return Err(RuntimeError::CantModifyBuiltins(index.clone()));
         }
@@ -102,10 +100,14 @@ impl Env {
         }
     }
 
+    #[track_caller]
     pub fn create_child(parent_env: Rc<RefCell<Env>>) -> Rc<RefCell<Env>> {
+        let loc = std::panic::Location::caller().to_string();
+
         Rc::new(RefCell::new(Env {
             level: parent_env.borrow().level + 1,
             parent: Some(parent_env.clone()),
+            origin: Some(loc),
             ..Default::default()
         }))
     }
@@ -119,12 +121,13 @@ impl Display for Env {
 
         write!(
             f,
-            "{}\x1b[32mEnv {}:\x1b[0m (Builtin = {}) (Toplevel = {}) {:?}",
+            "{}\x1b[32mEnv {}:\x1b[0m (Builtin = {}) (Toplevel = {}) {:?} - {:?}",
             "    ".repeat(self.level),
             self.level,
             self.is_builtin_env,
             self.is_toplevel(),
-            self.vars.keys()
+            self.vars.keys(),
+            self.origin,
         )?;
 
         Ok(())
@@ -162,6 +165,7 @@ pub enum ControlFlow {
 pub struct Interpreter {
     env: Rc<RefCell<Env>>,
     locals: HashMap<usize, usize>,
+    instance_id_counter: u64,
 }
 
 impl Default for Interpreter {
@@ -190,6 +194,7 @@ impl Default for Interpreter {
         Self {
             env: Env::create_child(Rc::new(RefCell::new(builtins))),
             locals: HashMap::new(),
+            instance_id_counter: 1,
         }
     }
 }
@@ -568,6 +573,7 @@ impl Interpreter {
                     }
                     Value::Class(_, _, _) => {
                         let instance = Rc::new(Value::Instance(
+                            self.instance_id(),
                             Box::new(callee_val.clone()),
                             Rc::new(RefCell::new(HashMap::new())),
                         ));
@@ -619,7 +625,7 @@ impl Interpreter {
                 let lhs = self.evaluate_expr(lhs, env)?;
 
                 match lhs.clone() {
-                    Value::Instance(class, params) => {
+                    Value::Instance(_, class, params) => {
                         if let Some(value) = params.borrow().get(name) {
                             return Ok(value.clone());
                         }
@@ -654,10 +660,10 @@ impl Interpreter {
             }
             Expr::WriteProperty(lhs, name, rhs, index) => {
                 let lhs = self.evaluate_expr(lhs, env.clone())?;
-                let rhs = self.evaluate_expr(rhs, env)?;
+                let rhs = self.evaluate_expr(rhs, env.clone())?;
 
                 match lhs {
-                    Value::Instance(_class, params) => {
+                    Value::Instance(_, _, params) => {
                         params.borrow_mut().insert(name.clone(), rhs);
                         Ok(Value::Nil)
                     }
@@ -770,14 +776,12 @@ impl Interpreter {
                         .define(param, Rc::new(args.get(i).unwrap().clone()));
                 }
 
-                println!("{name} {}", env.borrow());
-
                 let context = context.unwrap();
 
                 env.borrow_mut()
                     .define(&String::from("this"), context.clone());
 
-                match (name.as_str(), self.evaluate_block(&body, env.clone())) {
+                match (name.as_str(), self.evaluate_block(&body, env)) {
                     // a method named 'init' is always the constructor, which always returns 'this'
                     ("init", Ok(_)) => Ok(context.as_ref().clone()),
                     // also every return should return this
@@ -823,6 +827,12 @@ impl Interpreter {
     pub fn resolve(&mut self, expr: &Expr, depth: usize) {
         // TODO: replace the token index with an token ID as this is kinda in the REPL
         self.locals.insert(expr.token_index(), depth);
+    }
+
+    fn instance_id(&mut self) -> u64 {
+        let id = self.instance_id_counter;
+        self.instance_id_counter += 1;
+        id
     }
 }
 

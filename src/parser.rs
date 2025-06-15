@@ -17,7 +17,7 @@ pub enum Value {
         Option<Rc<Value>>,
         Rc<RefCell<HashMap<String, Value>>>,
     ),
-    Instance(Box<Value>, Rc<RefCell<HashMap<String, Value>>>),
+    Instance(u64, Box<Value>, Rc<RefCell<HashMap<String, Value>>>),
     Nil,
 }
 
@@ -32,9 +32,9 @@ impl Display for Value {
                 Some(parent) => format!("<class {name} {}>", parent.as_ref()),
                 None => format!("<class {name}>"),
             },
-            Value::Instance(class, props) => match class.as_ref() {
+            Value::Instance(id, class, props) => match class.as_ref() {
                 Value::Class(name, _, _) => format!(
-                    "{name}{{{}}}",
+                    "{name} #{id} {{{}}}",
                     props
                         .borrow()
                         .iter()
@@ -1282,9 +1282,9 @@ pub fn print_expr(expr: &Expr, indent_level: usize, prefix: Option<String>) {
                     );
                 }
             }
-            Value::Instance(class, props) => match class.as_ref() {
+            Value::Instance(id, class, props) => match class.as_ref() {
                 Value::Class(name, _, _) => {
-                    println!("{indent}{prefix}instance of class {name}");
+                    println!("{indent}{prefix}instance #{id} of class {name}");
 
                     for (name, value) in props.borrow().iter() {
                         print_expr(

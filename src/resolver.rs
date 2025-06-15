@@ -146,13 +146,12 @@ impl Resolver<'_> {
         params: &Vec<(String, usize)>,
         body: &Vec<Stmt>,
     ) -> Result<(), ResolverError> {
-        self.begin_scope();
-
         for (param, index) in params {
             self.declare(param, index.clone())?;
             self.define(param, index.clone());
         }
 
+        self.begin_scope();
         for stmt in body {
             self.resolve_stmt(stmt)?;
         }
