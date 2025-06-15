@@ -513,6 +513,15 @@ impl Interpreter {
                             ))
                         }
                     }
+                    Value::String(str) => match name.as_str() {
+                        "length" => Ok(Value::Number(str.len() as f64)),
+                        "reversed" => Ok(Value::String(str.chars().rev().collect())),
+                        _ => Err(RuntimeError::InvalidPropertyRead(
+                            lhs,
+                            name.clone(),
+                            index.clone(),
+                        )),
+                    },
                     _ => Err(RuntimeError::InvalidPropertyRead(
                         lhs,
                         name.clone(),
