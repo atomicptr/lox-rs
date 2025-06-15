@@ -87,3 +87,34 @@ fn run(interpreter: &mut Interpreter, code: &String) -> Result<Value, LoxError> 
 
     Ok(interpreter.run(&stmts)?)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_examples() {
+        for file in std::fs::read_dir("./examples").expect("read dir") {
+            let file = file.expect("get file");
+
+            let name = file.file_name();
+            let name = name.to_str().unwrap();
+
+            if !name.ends_with(".lox") {
+                continue;
+            }
+            println!("=== {name}");
+
+            let source = std::fs::read_to_string(file.path()).expect("read file");
+
+            let mut interpreter = Interpreter::default();
+            match run(&mut interpreter, &source) {
+                Ok(_) => {}
+                Err(err) => {
+                    handle_lox_error(&source, err);
+                    panic!("Program exited with error");
+                }
+            }
+        }
+    }
+}

@@ -231,6 +231,7 @@ pub enum Expr {
     ReadProperty(Box<Expr>, String, usize),
     WriteProperty(Box<Expr>, String, Box<Expr>, usize),
     This(usize),
+    Super(String, usize),
 }
 
 impl Expr {
@@ -249,6 +250,7 @@ impl Expr {
             Expr::ReadProperty(_, _, index) => *index,
             Expr::WriteProperty(_, _, _, index) => *index,
             Expr::This(index) => *index,
+            Expr::Super(_, index) => *index,
         }
     }
 }
@@ -317,6 +319,7 @@ pub enum ParserError {
     ExpectedLBraceBeforeBody(String, usize),
     ExpectedName(String, usize),
     ExpectedMemberNameAfterDot(usize),
+    ExpectedDotAfterSuper(usize),
 }
 
 impl Parser {
@@ -986,6 +989,23 @@ impl Parser {
             return Ok(Expr::This(index.clone()));
         }
 
+        if let Some((_, super_index)) = self.consume(Token::Super) {
+            let super_index = super_index.clone();
+
+            if self.consume_isnt(Token::Dot) {
+                return Err(ParserError::ExpectedDotAfterSuper(super_index.clone()));
+            }
+
+            if let Some((name, index)) = self.consume_identifier() {
+                return Ok(Expr::Super(name, index));
+            }
+
+            return Err(ParserError::ExpectedName(
+                "superclass method".to_string(),
+                super_index.clone(),
+            ));
+        }
+
         if let Some((name, index)) = self.consume_identifier() {
             return Ok(Expr::Variable(name, index));
         }
@@ -1326,6 +1346,7 @@ pub fn print_expr(expr: &Expr, indent_level: usize, prefix: Option<String>) {
             print_expr(rhs, indent_level + 1, Some(String::from("To: ")));
         }
         Expr::This(_) => println!("{indent}{prefix}This"),
+        Expr::Super(method, _) => println!("{indent}{prefix}Super Method {method}"),
     }
 }
 
@@ -1368,6 +1389,9 @@ pub fn print_parser_error(source: &String, err: &ParserError) {
         ParserError::ExpectedName(what, index) => (format!("expected {what} name"), index),
         ParserError::ExpectedMemberNameAfterDot(index) => {
             ("expected member name after '.'".to_string(), index)
+        }
+        ParserError::ExpectedDotAfterSuper(index) => {
+            ("expected '.' after 'super'".to_string(), index)
         }
     };
 

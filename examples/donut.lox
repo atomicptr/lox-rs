@@ -14,7 +14,12 @@ class Donut < Food {
     }
 }
 
-class BostonCream < Donut {}
+class BostonCream < Donut {
+    cook() {
+        super.cook();
+        print "Pipe full of castard and coat with chocolate.";
+    }
+}
 
 var donut = BostonCream();
 

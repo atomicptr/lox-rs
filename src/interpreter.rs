@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, fmt::Display, rc::Rc};
 
 use crate::{
     builtins::{lox_assert, lox_panic, lox_time, lox_tostring},
@@ -8,16 +8,29 @@ use crate::{
 
 #[derive(Debug, Default)]
 pub struct Env {
-    parent: Option<Rc<RefCell<Env>>>,
+    level: usize,
     vars: HashMap<String, Rc<Value>>,
+    parent: Option<Rc<RefCell<Env>>>,
     is_builtin_env: bool,
 }
 
 impl Env {
     pub fn lookup(&self, name: &String, distance: Option<usize>) -> Option<Rc<Value>> {
+        // println!("\x1b[31m=== Lookup\x1b[0m '{name}' {distance:?}");
+        // println!("{self}");
+
         match distance {
             Some(0) => self.vars.get(name).map(|v| v.clone()),
-            Some(n) => self.lookup(name, Some(n.checked_sub(1).unwrap())),
+            Some(n) => {
+                if let Some(parent) = &self.parent {
+                    // delegate the call to the parent
+                    parent
+                        .borrow()
+                        .lookup(name, Some(n.checked_sub(1).unwrap()))
+                } else {
+                    panic!("trying to move beyond root")
+                }
+            }
             None => {
                 // None means we only apply this to the toplevel
                 if self.is_toplevel() {
@@ -42,6 +55,9 @@ impl Env {
         index: &usize,
         dist: Option<usize>,
     ) -> Result<(), RuntimeError> {
+        println!("\x1b[31m=== Assign\x1b[0m '{name}' {dist:?}");
+        println!("{self}");
+
         if self.is_builtin_env {
             return Err(RuntimeError::CantModifyBuiltins(index.clone()));
         }
@@ -55,7 +71,16 @@ impl Env {
 
                 Err(RuntimeError::UnknownVariable(name.clone(), index.clone()))
             }
-            Some(n) => self.assign(name, value, index, Some(n - 1)),
+            Some(n) => {
+                if let Some(parent) = &self.parent {
+                    // delegate the call to the parent
+                    parent
+                        .borrow_mut()
+                        .assign(name, value, index, Some(n.checked_sub(1).unwrap()))
+                } else {
+                    panic!("trying to move beyond root")
+                }
+            }
             None => {
                 // None means we only apply this to the toplevel
                 if self.is_toplevel() {
@@ -79,9 +104,30 @@ impl Env {
 
     pub fn create_child(parent_env: Rc<RefCell<Env>>) -> Rc<RefCell<Env>> {
         Rc::new(RefCell::new(Env {
+            level: parent_env.borrow().level + 1,
             parent: Some(parent_env.clone()),
             ..Default::default()
         }))
+    }
+}
+
+impl Display for Env {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(parent) = &self.parent {
+            writeln!(f, "{}", parent.borrow())?;
+        }
+
+        write!(
+            f,
+            "{}\x1b[32mEnv {}:\x1b[0m (Builtin = {}) (Toplevel = {}) {:?}",
+            "    ".repeat(self.level),
+            self.level,
+            self.is_builtin_env,
+            self.is_toplevel(),
+            self.vars.keys()
+        )?;
+
+        Ok(())
     }
 }
 
@@ -277,7 +323,22 @@ impl Interpreter {
                 };
 
                 let methods_map = Rc::new(RefCell::new(HashMap::new()));
-                let class = Rc::new(Value::Class(name.clone(), superclass, methods_map.clone()));
+                let class = Rc::new(Value::Class(
+                    name.clone(),
+                    superclass.clone(),
+                    methods_map.clone(),
+                ));
+
+                env.borrow_mut().define(name, class);
+
+                let env = if let Some(ref superclass) = superclass {
+                    let env = Env::create_child(env);
+                    env.borrow_mut()
+                        .define(&String::from("super"), superclass.clone());
+                    env
+                } else {
+                    env
+                };
 
                 for m in methods {
                     if let Stmt::Func(name, params, body, _) = m {
@@ -296,7 +357,6 @@ impl Interpreter {
                     }
                 }
 
-                env.borrow_mut().define(name, class);
                 Ok(Value::Nil)
             }
         }
@@ -506,20 +566,15 @@ impl Interpreter {
 
                         self.call_func(&fun, &args, context, callee.token_index())
                     }
-                    Value::Class(_, _, methods) => {
+                    Value::Class(_, _, _) => {
                         let instance = Rc::new(Value::Instance(
-                            Box::new(callee_val),
+                            Box::new(callee_val.clone()),
                             Rc::new(RefCell::new(HashMap::new())),
                         ));
 
-                        let init_arity =
-                            if let Some(Value::Func(Fn::LoxMethod(_, params, _, _), _)) =
-                                methods.borrow().get("init")
-                            {
-                                params.len()
-                            } else {
-                                0
-                            };
+                        let init_fn = self.find_method(&callee_val, "init");
+
+                        let init_arity = init_fn.as_ref().map(|fun| fun.arity()).unwrap_or(0);
 
                         if init_arity != args.len() {
                             return Err(RuntimeError::FnInvalidNumberOfArguments(
@@ -529,19 +584,14 @@ impl Interpreter {
                             ));
                         }
 
-                        if let Some(Value::Func(Fn::LoxMethod(_, _, _, _), _)) =
-                            methods.borrow().get("init")
-                        {
-                            if let Some(Value::Func(fun, _)) = methods.borrow().get("init") {
-                                let _ = self.call_func(
-                                    fun,
-                                    &args,
-                                    Some(instance.clone()),
-                                    callee.token_index(),
-                                );
-                            }
+                        if let Some(init_fn) = init_fn {
+                            let _ = self.call_func(
+                                &init_fn,
+                                &args,
+                                Some(instance.clone()),
+                                callee.token_index(),
+                            );
                         }
-
                         Ok(instance.as_ref().clone())
                     }
                     _ => Err(RuntimeError::NotCallable(callee.token_index())),
@@ -574,42 +624,8 @@ impl Interpreter {
                             return Ok(value.clone());
                         }
 
-                        if let Value::Class(_, superclass, methods) = class.as_ref() {
-                            if let Some(Value::Func(method, _)) = methods.borrow().get(name) {
-                                return Ok(Value::Func(method.clone(), Some(Rc::new(lhs))));
-                            }
-
-                            // if we dont have the member, check superclass
-                            if let Some(superclass) = superclass {
-                                let mut superclass = superclass.clone();
-
-                                loop {
-                                    if let Value::Class(_, parent, methods) =
-                                        superclass.as_ref().clone()
-                                    {
-                                        if let Some(Value::Func(method, _)) =
-                                            methods.borrow().get(name)
-                                        {
-                                            return Ok(Value::Func(
-                                                method.clone(),
-                                                Some(Rc::new(lhs)),
-                                            ));
-                                        }
-
-                                        // we couldnt find it, if there is another parent try again
-                                        if let Some(parent) = parent {
-                                            superclass = parent.clone();
-                                            continue;
-                                        }
-
-                                        break;
-                                    }
-
-                                    break;
-                                }
-                            }
-                        } else {
-                            unreachable!();
+                        if let Some(method) = self.find_method(class.as_ref(), name) {
+                            return Ok(Value::Func(method, Some(Rc::new(lhs))));
                         }
 
                         Err(RuntimeError::UnknownProperty(
@@ -666,7 +682,63 @@ impl Interpreter {
                     index.clone(),
                 ))
             }
+            Expr::Super(method, index) => {
+                let dist = self.expr_distance(expr);
+
+                let superclass = env.borrow().lookup(&String::from("super"), dist).unwrap();
+
+                let instance = env
+                    .borrow()
+                    .lookup(
+                        &String::from("this"),
+                        dist.map(|d| d.checked_sub(1).unwrap()),
+                    )
+                    .unwrap();
+
+                if let Some(method) = self.find_method(superclass.as_ref(), method) {
+                    return Ok(Value::Func(method, Some(instance)));
+                }
+
+                Err(RuntimeError::UnknownProperty(
+                    instance.as_ref().clone(),
+                    method.clone(),
+                    index.clone(),
+                ))
+            }
         }
+    }
+
+    fn find_method(&self, class: &Value, name: &str) -> Option<Fn> {
+        if let Value::Class(_, superclass, methods) = class {
+            if let Some(Value::Func(method, _)) = methods.borrow().get(name) {
+                return Some(method.clone());
+            }
+
+            // if we dont have the member, check superclass
+            if let Some(superclass) = superclass {
+                let mut superclass = superclass.clone();
+
+                loop {
+                    if let Value::Class(_, parent, methods) = superclass.as_ref().clone() {
+                        if let Some(Value::Func(method, _)) = methods.borrow().get(name) {
+                            return Some(method.clone());
+                        }
+
+                        // we couldnt find it, if there is another parent try again
+                        if let Some(parent) = parent {
+                            superclass = parent.clone();
+                            continue;
+                        }
+
+                        break;
+                    }
+
+                    break;
+                }
+            }
+        }
+
+        None
     }
 
     fn call_func(
@@ -685,7 +757,7 @@ impl Interpreter {
                         .define(param, Rc::new(args.get(i).unwrap().clone()));
                 }
 
-                match self.evaluate_block_with_env(&body, env) {
+                match self.evaluate_block(&body, env) {
                     Ok(_) => Ok(Value::Nil),
                     Err(err) => Err(err),
                 }
@@ -698,12 +770,14 @@ impl Interpreter {
                         .define(param, Rc::new(args.get(i).unwrap().clone()));
                 }
 
+                println!("{name} {}", env.borrow());
+
                 let context = context.unwrap();
 
                 env.borrow_mut()
                     .define(&String::from("this"), context.clone());
 
-                match (name.as_str(), self.evaluate_block_with_env(&body, env)) {
+                match (name.as_str(), self.evaluate_block(&body, env.clone())) {
                     // a method named 'init' is always the constructor, which always returns 'this'
                     ("init", Ok(_)) => Ok(context.as_ref().clone()),
                     // also every return should return this
@@ -737,15 +811,8 @@ impl Interpreter {
         stmts: &Vec<Stmt>,
         env: Rc<RefCell<Env>>,
     ) -> Result<(), RuntimeError> {
-        let new_env = Env::create_child(env);
-        self.evaluate_block_with_env(stmts, new_env)
-    }
+        let env = Env::create_child(env);
 
-    fn evaluate_block_with_env(
-        &mut self,
-        stmts: &Vec<Stmt>,
-        env: Rc<RefCell<Env>>,
-    ) -> Result<(), RuntimeError> {
         for stmt in stmts.iter() {
             let _ = self.evaluate_stmt(stmt, env.clone())?;
         }

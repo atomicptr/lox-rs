@@ -31,7 +31,7 @@ struct Resolver<'a> {
     scopes: Vec<HashMap<String, VarState>>,
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 enum VarState {
     Declared(usize),
     Defined(usize),
@@ -116,11 +116,13 @@ impl Resolver<'_> {
                     self.resolve_expr(superclass)?;
                 }
 
-                self.begin_scope();
-
-                if let Some(scope) = self.scopes.first_mut() {
-                    scope.insert(String::from("this"), VarState::Used);
+                if let Some(_) = superclass {
+                    self.begin_scope();
+                    self.set_var_state("super", VarState::Used);
                 }
+
+                self.begin_scope();
+                self.set_var_state("this", VarState::Used);
 
                 for method in methods {
                     if let Stmt::Func(_, params, body, _) = method {
@@ -129,6 +131,10 @@ impl Resolver<'_> {
                 }
 
                 self.end_scope();
+
+                if let Some(_) = superclass {
+                    self.end_scope();
+                }
 
                 Ok(())
             }
@@ -147,9 +153,11 @@ impl Resolver<'_> {
             self.define(param, index.clone());
         }
 
-        self.resolve(body)?;
-        self.report_unused_vars()?;
+        for stmt in body {
+            self.resolve_stmt(stmt)?;
+        }
 
+        self.report_unused_vars()?;
         self.end_scope();
 
         Ok(())
@@ -159,7 +167,7 @@ impl Resolver<'_> {
         match expr {
             Expr::Literal(_, _) => Ok(()),
             Expr::Variable(name, index) => {
-                if let Some(scope) = self.scopes.first() {
+                if let Some(scope) = self.current_scope() {
                     if let Some(VarState::Declared(_)) = scope.get(name) {
                         return Err(ResolverError::CantReadLocalVarInItsOwnInitializer(
                             index.clone(),
@@ -208,39 +216,41 @@ impl Resolver<'_> {
                 self.resolve_expr(rhs)
             }
             Expr::This(_) => {
-                self.resolve_local(expr, &String::from("this"));
+                self.resolve_local(expr, "this");
+                Ok(())
+            }
+            Expr::Super(_, _) => {
+                self.resolve_local(expr, "super");
                 Ok(())
             }
         }
     }
 
-    fn resolve_local(&mut self, expr: &Expr, name: &String) {
+    fn resolve_local(&mut self, expr: &Expr, name: &str) {
         for (i, scope) in self.scopes.iter_mut().rev().enumerate() {
             if let Some(_) = scope.get(name) {
                 self.interpreter.resolve(expr, i);
 
-                scope.insert(name.clone(), VarState::Used);
+                scope.insert(String::from(name), VarState::Used);
             }
         }
     }
 
     fn declare(&mut self, name: &String, index: usize) -> Result<(), ResolverError> {
-        if let Some(scope) = self.scopes.first_mut() {
+        if let Some(scope) = self.current_scope() {
             // already has the name
             if let Some(_) = scope.get(name) {
                 return Err(ResolverError::VariableAlreadyDeclared(name.clone(), index));
             }
-
-            scope.insert(name.clone(), VarState::Declared(index));
         }
+
+        self.set_var_state(name, VarState::Declared(index));
 
         Ok(())
     }
 
     fn define(&mut self, name: &String, index: usize) {
-        if let Some(scope) = self.scopes.first_mut() {
-            scope.insert(name.clone(), VarState::Defined(index));
-        }
+        self.set_var_state(name, VarState::Defined(index));
     }
 
     fn begin_scope(&mut self) {
@@ -254,7 +264,7 @@ impl Resolver<'_> {
     }
 
     fn report_unused_vars(&self) -> Result<(), ResolverError> {
-        if let Some(scope) = self.scopes.first() {
+        if let Some(scope) = self.current_scope() {
             for (name, state) in scope.iter() {
                 if let VarState::Used = state {
                     continue;
@@ -271,6 +281,16 @@ impl Resolver<'_> {
         }
 
         Ok(())
+    }
+
+    fn current_scope(&self) -> Option<&HashMap<String, VarState>> {
+        self.scopes.last()
+    }
+
+    fn set_var_state(&mut self, key: &str, state: VarState) {
+        if let Some(scope) = self.scopes.last_mut() {
+            scope.insert(String::from(key), state);
+        }
     }
 }
 
