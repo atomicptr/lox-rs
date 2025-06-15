@@ -212,11 +212,12 @@ pub enum Expr {
     Logical(Box<Expr>, LogicalOp, Box<Expr>, usize),
     Unary(UnaryOp, Box<Expr>, usize),
     Variable(String, usize),
-    Assignment(String, Box<Expr>, usize),
+    Assign(String, Box<Expr>, usize),
     Call(Box<Expr>, Vec<Box<Expr>>, usize),
     Closure(Vec<(String, usize)>, Vec<Stmt>, usize),
     Ternary(Box<Expr>, Box<Expr>, Box<Expr>, usize),
     ReadProperty(Box<Expr>, String, usize),
+    WriteProperty(Box<Expr>, String, Box<Expr>, usize),
 }
 
 impl Expr {
@@ -227,12 +228,13 @@ impl Expr {
             Expr::Literal(_, index) => *index,
             Expr::Unary(_, _, index) => *index,
             Expr::Variable(_, index) => *index,
-            Expr::Assignment(_, _, index) => *index,
+            Expr::Assign(_, _, index) => *index,
             Expr::Logical(_, _, _, index) => *index,
             Expr::Call(_, _, index) => *index,
             Expr::Closure(_, _, index) => *index,
             Expr::Ternary(_, _, _, index) => *index,
             Expr::ReadProperty(_, _, index) => *index,
+            Expr::WriteProperty(_, _, _, index) => *index,
         }
     }
 }
@@ -746,7 +748,11 @@ impl Parser {
             let value = self.assignment()?;
 
             if let Expr::Variable(name, index) = expr {
-                return Ok(Expr::Assignment(name, Box::new(value), index));
+                return Ok(Expr::Assign(name, Box::new(value), index));
+            }
+
+            if let Expr::ReadProperty(lhs, name, index) = expr {
+                return Ok(Expr::WriteProperty(lhs, name, Box::new(value), index));
             }
 
             return Err(ParserError::InvalidAssignmentTarget(index));
@@ -1225,7 +1231,7 @@ pub fn print_expr(expr: &Expr, indent_level: usize, prefix: Option<String>) {
             Value::Nil => println!("{indent}{prefix}Nil"),
         },
         Expr::Variable(name, _) => println!("{indent}{prefix}Var {name}"),
-        Expr::Assignment(name, expr, _) => {
+        Expr::Assign(name, expr, _) => {
             println!("{indent}{prefix}assign var {name} = {:?}", expr)
         }
         Expr::Logical(lhs, op, rhs, _) => {
@@ -1263,8 +1269,13 @@ pub fn print_expr(expr: &Expr, indent_level: usize, prefix: Option<String>) {
             print_expr(&else_expr, indent_level + 1, Some(String::from("Else: ")));
         }
         Expr::ReadProperty(lhs, name, _) => {
-            println!("{indent}{prefix}Get Expr: .{name}");
+            println!("{indent}{prefix}Read Property: .{name}");
             print_expr(lhs, indent_level + 1, None);
+        }
+        Expr::WriteProperty(lhs, name, rhs, _) => {
+            println!("{indent}{prefix}Write Property .{name}");
+            print_expr(lhs, indent_level + 1, Some(String::from("Set: ")));
+            print_expr(rhs, indent_level + 1, Some(String::from("To: ")));
         }
     }
 }

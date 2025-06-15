@@ -145,7 +145,7 @@ impl Resolver<'_> {
 
                 Ok(())
             }
-            Expr::Assignment(name, expr, _) => {
+            Expr::Assign(name, expr, _) => {
                 self.resolve_expr(expr)?;
                 self.resolve_local(expr, name);
 
@@ -177,6 +177,10 @@ impl Resolver<'_> {
                 self.resolve_expr(else_expr)
             }
             Expr::ReadProperty(expr, _, _) => self.resolve_expr(expr),
+            Expr::WriteProperty(lhs, _, rhs, _) => {
+                self.resolve_expr(lhs)?;
+                self.resolve_expr(rhs)
+            }
         }
     }
 

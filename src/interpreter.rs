@@ -100,6 +100,7 @@ pub enum RuntimeError {
     AssertionFailed(Value, usize),
     Panic(Value, usize),
     InvalidPropertyRead(Value, String, usize),
+    InvalidPropertyWrite(Value, String, usize),
     UnknownProperty(Value, String, usize),
 }
 
@@ -406,7 +407,7 @@ impl Interpreter {
                     None => Err(RuntimeError::UnknownVariable(name.clone(), index.clone())),
                 }
             }
-            Expr::Assignment(name, expr, index) => {
+            Expr::Assign(name, expr, index) => {
                 let dist = self.expr_distance(expr);
                 let var = env.borrow().lookup(name, dist.clone());
                 match var {
@@ -513,6 +514,22 @@ impl Interpreter {
                         }
                     }
                     _ => Err(RuntimeError::InvalidPropertyRead(
+                        lhs,
+                        name.clone(),
+                        index.clone(),
+                    )),
+                }
+            }
+            Expr::WriteProperty(lhs, name, rhs, index) => {
+                let lhs = self.evaluate_expr(lhs, env.clone())?;
+                let rhs = self.evaluate_expr(rhs, env)?;
+
+                match lhs {
+                    Value::Instance(_class, params) => {
+                        params.borrow_mut().insert(name.clone(), rhs);
+                        Ok(Value::Nil)
+                    }
+                    _ => Err(RuntimeError::InvalidPropertyWrite(
                         lhs,
                         name.clone(),
                         index.clone(),
@@ -628,6 +645,10 @@ pub fn print_runtime_error(source: &String, err: RuntimeError) {
         RuntimeError::Panic(message, index) => (format!("PANIC: {message}"), index),
         RuntimeError::InvalidPropertyRead(callee, name, index) => (
             format!("invalid property access '.{name}' on '{callee}'"),
+            index,
+        ),
+        RuntimeError::InvalidPropertyWrite(callee, name, index) => (
+            format!("illegal write attempt '.{name}' on '{callee}'"),
             index,
         ),
         RuntimeError::UnknownProperty(callee, name, index) => {
