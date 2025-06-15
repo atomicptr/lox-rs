@@ -574,9 +574,39 @@ impl Interpreter {
                             return Ok(value.clone());
                         }
 
-                        if let Value::Class(_, _, methods) = class.as_ref() {
+                        if let Value::Class(_, superclass, methods) = class.as_ref() {
                             if let Some(Value::Func(method, _)) = methods.borrow().get(name) {
                                 return Ok(Value::Func(method.clone(), Some(Rc::new(lhs))));
+                            }
+
+                            // if we dont have the member, check superclass
+                            if let Some(superclass) = superclass {
+                                let mut superclass = superclass.clone();
+
+                                loop {
+                                    if let Value::Class(_, parent, methods) =
+                                        superclass.as_ref().clone()
+                                    {
+                                        if let Some(Value::Func(method, _)) =
+                                            methods.borrow().get(name)
+                                        {
+                                            return Ok(Value::Func(
+                                                method.clone(),
+                                                Some(Rc::new(lhs)),
+                                            ));
+                                        }
+
+                                        // we couldnt find it, if there is another parent try again
+                                        if let Some(parent) = parent {
+                                            superclass = parent.clone();
+                                            continue;
+                                        }
+
+                                        break;
+                                    }
+
+                                    break;
+                                }
                             }
                         } else {
                             unreachable!();
