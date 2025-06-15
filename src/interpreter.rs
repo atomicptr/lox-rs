@@ -102,6 +102,7 @@ pub enum RuntimeError {
     InvalidPropertyRead(Value, String, usize),
     InvalidPropertyWrite(Value, String, usize),
     UnknownProperty(Value, String, usize),
+    MustBe(String, String, usize),
 }
 
 #[derive(Debug)]
@@ -256,9 +257,27 @@ impl Interpreter {
                     index.clone(),
                 ))
             }
-            Stmt::Class(name, methods, _) => {
+            Stmt::Class(name, superclass, methods, _) => {
+                let superclass = if let Some(superclass) = superclass {
+                    let index = superclass.token_index();
+
+                    let superclass = self.evaluate_expr(superclass, env.clone())?;
+
+                    if let Value::Class(_, _, _) = superclass {
+                        Some(Rc::new(superclass))
+                    } else {
+                        return Err(RuntimeError::MustBe(
+                            String::from("super class"),
+                            String::from("a class"),
+                            index,
+                        ));
+                    }
+                } else {
+                    None
+                };
+
                 let methods_map = Rc::new(RefCell::new(HashMap::new()));
-                let class = Rc::new(Value::Class(name.clone(), methods_map.clone()));
+                let class = Rc::new(Value::Class(name.clone(), superclass, methods_map.clone()));
 
                 for m in methods {
                     if let Stmt::Func(name, params, body, _) = m {
@@ -487,7 +506,7 @@ impl Interpreter {
 
                         self.call_func(&fun, &args, context, callee.token_index())
                     }
-                    Value::Class(_, methods) => {
+                    Value::Class(_, _, methods) => {
                         let instance = Rc::new(Value::Instance(
                             Box::new(callee_val),
                             Rc::new(RefCell::new(HashMap::new())),
@@ -555,7 +574,7 @@ impl Interpreter {
                             return Ok(value.clone());
                         }
 
-                        if let Value::Class(_, methods) = class.as_ref() {
+                        if let Value::Class(_, _, methods) = class.as_ref() {
                             if let Some(Value::Func(method, _)) = methods.borrow().get(name) {
                                 return Ok(Value::Func(method.clone(), Some(Rc::new(lhs))));
                             }
@@ -770,6 +789,7 @@ pub fn print_runtime_error(source: &String, err: RuntimeError) {
         RuntimeError::UnknownProperty(callee, name, index) => {
             (format!("'{callee}' has no property '.{name}'"), index)
         }
+        RuntimeError::MustBe(a, b, index) => (format!("{a} must be {b}"), index),
     };
 
     print_error_at(source, index, message.as_str());

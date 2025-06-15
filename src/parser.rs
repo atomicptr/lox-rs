@@ -12,7 +12,11 @@ pub enum Value {
     Number(f64),
     Bool(bool),
     Func(Fn, Option<Rc<Value>>),
-    Class(String, Rc<RefCell<HashMap<String, Value>>>),
+    Class(
+        String,
+        Option<Rc<Value>>,
+        Rc<RefCell<HashMap<String, Value>>>,
+    ),
     Instance(Box<Value>, Rc<RefCell<HashMap<String, Value>>>),
     Nil,
 }
@@ -24,9 +28,12 @@ impl Display for Value {
             Value::Number(n) => format!("{n}"),
             Value::Bool(b) => format!("{b}"),
             Value::Func(fun, _) => format!("{fun}"),
-            Value::Class(name, _) => format!("<class {name}>"),
+            Value::Class(name, parent, _) => match parent {
+                Some(parent) => format!("<class {name} {}>", parent.as_ref()),
+                None => format!("<class {name}>"),
+            },
             Value::Instance(class, props) => match class.as_ref() {
-                Value::Class(name, _) => format!(
+                Value::Class(name, _, _) => format!(
                     "{name}{{{}}}",
                     props
                         .borrow()
@@ -258,7 +265,7 @@ pub enum Stmt {
     Break(usize),
     Continue(usize),
     Return(Option<Box<Expr>>, usize),
-    Class(String, Vec<Stmt>, usize),
+    Class(String, Option<Box<Expr>>, Vec<Stmt>, usize),
 }
 
 impl Stmt {
@@ -277,7 +284,7 @@ impl Stmt {
             Stmt::Break(index) => index.clone(),
             Stmt::Continue(index) => index.clone(),
             Stmt::Return(_, index) => index.clone(),
-            Stmt::Class(_, _, index) => index.clone(),
+            Stmt::Class(_, _, _, index) => index.clone(),
         }
     }
 }
@@ -361,6 +368,18 @@ impl Parser {
         let class_index = self.previous_index().unwrap();
 
         if let Some((name, index)) = self.consume_identifier() {
+            let superclass = if let Some((_, index)) = self.consume(Token::Less) {
+                let index = index.clone();
+
+                if let Some((superclass, superclass_index)) = self.consume_identifier() {
+                    Some(Box::new(Expr::Variable(superclass, superclass_index)))
+                } else {
+                    return Err(ParserError::ExpectedName(String::from("superclass"), index));
+                }
+            } else {
+                None
+            };
+
             if self.consume_isnt(Token::LBrace) {
                 return Err(ParserError::ExpectedLBraceBeforeBody(
                     format!("class {name}"),
@@ -380,7 +399,7 @@ impl Parser {
                 return Err(ParserError::ExpectedRBraceAfterBlock(index.clone()));
             }
 
-            return Ok(Stmt::Class(name, methods, class_index));
+            return Ok(Stmt::Class(name, superclass, methods, class_index));
         }
 
         Err(ParserError::ExpectedName("class".to_string(), class_index))
@@ -1189,8 +1208,16 @@ pub fn print_stmt(stmt: &Stmt, indent_level: usize, prefix: Option<String>) {
                 print_expr(expr, indent_level + 1, None);
             }
         }
-        Stmt::Class(name, methods, _) => {
+        Stmt::Class(name, superclass, methods, _) => {
             println!("{indent}{prefix}Class {name}");
+
+            if let Some(superclass) = superclass {
+                print_expr(
+                    superclass,
+                    indent_level + 1,
+                    Some(String::from("Extends: ")),
+                );
+            }
 
             for m in methods {
                 print_stmt(m, indent_level + 1, Some(String::from("Method: ")));
@@ -1224,7 +1251,7 @@ pub fn print_expr(expr: &Expr, indent_level: usize, prefix: Option<String>) {
                 println!("{indent}{prefix}Bool = {b}")
             }
             Value::Func(fun, _) => println!("{indent}{prefix}func {fun}"),
-            Value::Class(name, methods) => {
+            Value::Class(name, _, methods) => {
                 println!("{indent}{prefix}class {name}");
 
                 for (name, fun) in methods.borrow().iter() {
@@ -1236,7 +1263,7 @@ pub fn print_expr(expr: &Expr, indent_level: usize, prefix: Option<String>) {
                 }
             }
             Value::Instance(class, props) => match class.as_ref() {
-                Value::Class(name, _) => {
+                Value::Class(name, _, _) => {
                     println!("{indent}{prefix}instance of class {name}");
 
                     for (name, value) in props.borrow().iter() {

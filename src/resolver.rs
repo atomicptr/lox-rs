@@ -22,6 +22,7 @@ pub enum ResolverError {
     CantReadLocalVarInItsOwnInitializer(usize),
     VariableAlreadyDeclared(String, usize),
     UnusedVar(String, usize),
+    CantInheritItself(String, usize),
 }
 
 #[derive(Debug)]
@@ -101,9 +102,19 @@ impl Resolver<'_> {
             }
             Stmt::Break(_) => Ok(()),
             Stmt::Continue(_) => Ok(()),
-            Stmt::Class(name, methods, index) => {
+            Stmt::Class(name, superclass, methods, index) => {
                 self.declare(name, index.clone())?;
                 self.define(name, index.clone());
+
+                if let Some(superclass) = superclass {
+                    if let Expr::Variable(superclass, index) = *superclass.clone() {
+                        if *name == superclass {
+                            return Err(ResolverError::CantInheritItself(superclass, index));
+                        }
+                    }
+
+                    self.resolve_expr(superclass)?;
+                }
 
                 self.begin_scope();
 
@@ -274,6 +285,9 @@ pub fn print_resolver_error(source: &String, err: ResolverError) {
             index,
         ),
         ResolverError::UnusedVar(name, index) => (format!("unused variable '{name}'"), index),
+        ResolverError::CantInheritItself(baseclass, index) => {
+            (format!("class {baseclass} can't inherit itself"), index)
+        }
     };
 
     print_error_at(source, index, message.as_str());
